@@ -4,9 +4,10 @@ for the OAuth 2.0 provider
 """
 
 from persistent import Persistent
-from datetime import datetime
 from time import time
 from uuid import uuid4
+
+    
 
 class Client(Persistent):
     """
@@ -14,10 +15,17 @@ class Client(Persistent):
     storing the name of the client, and the client_id and client_secret as
     specified in OAuth 2.0 draft (draft-ietf-oauth-v2-22)
     """
-    def __init__(self, client_name, client_id, client_secret):
+    def __init__(self,
+                 client_name,
+                 client_id,
+                 client_secret,
+                 redirect_uri,
+                 client_type='confidential'):
         self._client_name = client_name
         self._client_id = client_id
         self._client_secret = client_secret
+        self._redirect_uri = redirect_uri
+        self._client_type = client_type
 
 
     @property
@@ -50,10 +58,34 @@ class Client(Persistent):
         self._client_secret = client_secret
 
 
+    @property
+    def redirect_uri(self):
+        return self._redirect_uri
+
+
+
+    @redirect_uri.setter
+    def redirect_uri(self, redirect_uri):
+        self._redirect_uri = redirect_uri
+
+
+    @property
+    def type(self):
+        return self._client_type
+
+
+    @type.setter
+    def type(self, client_type):
+        self._client_type = client_type
+        
+
 
 class AuthCode(Persistent):
     """
-    Represents the auth code created when a resource owner and client authenticates 
+    Represents the auth code created when a resource
+    owner and client authenticates.
+
+    Should be deleted after first use or after it expires.
     """
     def __init__(self, client, user, expire = 600):
         self._client = client
@@ -136,7 +168,21 @@ class User(Persistent):
     def lastname(self, name):
         self._lastname = name
 
+
+
+
+class AccessToken(AuthCode):
+    def __init__(self, client, user, expire = 3600):
+        super(AccessToken, self).__init__(client, user, expire)
         
+
+
+class RefreshToken(AuthCode):
+    def __init__(self, client, user, expire = 0):
+        super(AccessToken, self).__init__(client, user, expire)
+        if expire == 0:
+            self._expire = None
+
 
 if __name__ == '__main__':
     from unittest import TestCase, main
@@ -144,44 +190,102 @@ if __name__ == '__main__':
     class TestClient(TestCase):
         def test_create_client(self):
             try:
-                client = Client('test', '0909', '9089')
+                client = Client('test', '0909', '9089', 'https://localhost')
             except Exception, e:
                 self.fail(str(e))
 
 
         def test_get_name(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             self.assertEqual(client.name, 'test')
 
 
         def test_set_name(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             client.name = 'test2'
             self.assertEqual(client.name, 'test2')
 
 
         def test_get_id(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             self.assertEqual(client.id, '0909')
 
 
         def test_set_id(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             client.id = '9999'
             self.assertEqual(client.id, '9999')
 
 
         def test_get_secret(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             self.assertEqual(client.secret, '9089')
 
 
         def test_set_secret(self):
-            client = Client('test', '0909', '9089')
+            client = Client('test', '0909', '9089', 'https://localhost')
             client.secret = '8888'
             self.assertEqual(client.secret, '8888')
+
+
+        def test_get_redirect_uri(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            self.assertEqual(client.redirect_uri, 'https://localhost')
+
+
+        def test_set_redirect_uri(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            client.redirect_uri = 'bhttps://localhost/target'
+            self.assertEqual(client.redirect_uri, 'https://localhost/target')
         
 
+        def test_get_type(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            self.assertEqual(client.type, 'confidential')
+
+
+
+        def test_set_type(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            client.type = 'public'
+            self.assertEqual(client.type, 'public')
+            
+
+    class TestAuthCode(TestCase):
+        def test_create_authcode(self):
+            try:
+                AuthCode('client', 'user')
+            except Exception, e:
+                self.fail(str(e))
+
+
+        def test_get_client(self):
+            authcode = AuthCode('client', 'user')
+            self.assertEqual(authcode.client, 'client')
+
+
+        def test_get_user(self):
+            authcode = AuthCode('client', 'user')
+            self.assertEqual(authcode.user, 'user')
+
+
+        def test_get_code(self):
+            authcode = AuthCode('client', 'user')
+            self.assertIsNotNone(authcode.code)
+
+
+        def test_code_unique(self):
+            #just create two instances and compare their codes
+            authcode1 = AuthCode('client1', 'user')
+            authcode2 = AuthCode('client2', 'user')
+            self.assertNotEqual(authcode1.code, authcode2.code)
+
+
+        def test_get_expire(self):
+            authcode = AuthCode('client', 'user')
+            self.assertGreaterEqual(authcode.expire, time())
+            self.assertLessEqual(authcode.expire, time() + 600)
+            
 
     class TestUser(TestCase):
         def test_create_user(self):

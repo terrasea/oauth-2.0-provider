@@ -1,0 +1,37 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>$title</title>
+    
+  </head>
+  <body>
+    <div id="content">
+      <form id="login_form" method="post" action="$action">
+        <fieldset class="login">
+          <legend>Identify youself</legend>
+          <div>
+            <label for="username">Username</label>
+            <input id="username" type="text" name="username"/>
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" name="password"/>
+          </div>
+          <input type="submit" value="Login"/>
+          <input type="hidden" name="client_id" value="$client_id"/>
+          <input type="hidden" name="redirect_uri"
+          value="$redirect_uri"/>
+          #if $scope
+          <input type="hidden" name="scope" value="$scope"/>
+          #end if
+          #if $state
+          <input type="hidden" name="state" value="$state"/>
+          #end if
+        </fieldset>
+      </form>
+    </div>
+  </body>
+</html>
