@@ -3,13 +3,39 @@ Carries out the responsiblity of authenticating
 the client application/program and resource owner/user
 """
 
-from cherrypy import expose, HTTPRedirect, session
+from cherrypy import expose, HTTPRedirect, config
 from Cheetah.Template import Template
 from cStringIO import StringIO
 from urllib import urlencode
 
-from database import client_exists, get_client, available_scope
+from database import client_exists, get_client, \
+     available_scope, get_password, get_user
+from user_resource_grant import user_resource_grant
 
+
+def check(username, password):
+    if username in ('admin', 'james', 'jim',):
+        return u"Invalid user"
+
+    if 'password' != password:
+        return u'Invalid password'
+    
+
+def login_required(func):
+    @config(**{})
+    def wrap(*args, **kwargs):
+        return func(args, kwargs)
+
+    return wrap
+
+config.update({
+    'tools.sessions.on': True,
+    'tools.session_auth.on': True,
+    'tools.session_auth.check_username_and_password':check,
+    })              
+
+
+@login_required
 @expose
 def authorise_client(response_type,
                      client_id,
@@ -71,8 +97,19 @@ def authorise_client(response_type,
         error_str.write(urlencode(error_list))
         return HTTPRedirect(error_str.getvalue())
 
+    user = get_user()
+    if user == None:
+        #for some reason the user logged in is not in DB
+        error_str = StringIO()
+        error_str.write(redirect_uri)
+        error_list = [('error', 'access_denied')]
+        if state != None:
+            error_list.append(('state', state))
+        error_str.write('?')
+        error_str.write(urlencode(error_list))
+        return HTTPRedirect(error_str.getvalue())
 
-                      
     
+    grant = user_resource_grant()
     
     pass

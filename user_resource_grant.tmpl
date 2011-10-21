@@ -9,18 +9,13 @@
   </head>
   <body>
     <div id="content">
-      <form id="login_form" method="post" action="$action">
-        <fieldset class="login">
-          <legend>Identify youself</legend>
-          <div>
-            <label for="username">Username</label>
-            <input id="username" type="text" name="username"/>
-          </div>
-          <div>
-            <label for="password">Password</label>
-            <input id="password" type="password" name="password"/>
-          </div>
-          <input type="submit" value="Login"/>
+      
+      <form id="grant_form" method="post" action="$action">
+        <fieldset class="grant_field">
+          <legend>Resource grant?</legend>
+          <div>$message</div>
+          <input type="submit" name="submit_true" value="Allow" />
+          <input type="submit" name="submit_false" value="No thanks" />
           <input type="hidden" name="client_id" value="$client_id"/>
           <input type="hidden" name="redirect_uri"
           value="$redirect_uri"/>
@@ -35,3 +30,4 @@
     </div>
   </body>
 </html>
+  
