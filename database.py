@@ -3,6 +3,14 @@ import logging
 from models import User, Client
 from ZEO.ClientStorage import ClientStorage
 from ZODB import DB
+import transaction
+from time import time
+
+
+
+SERVER = 'localhost'
+PORT = 8000
+
 
 class DB(object):
     def __init__(self, server, port):
@@ -30,6 +38,7 @@ def create_client(client_name,
                      redirect_uri,
                      client_type)
     db.dbroot[client_id] = client
+    transaction.commit()
     db.close()
     pass
 
@@ -89,8 +98,27 @@ def get_user():
 def create_auth_code(client_id):
     client = get_client(client_id)
     user = get_user()
-    auth_code = AuthCode(client, user)
     db = DB(SERVER, PORT)
+    auth_code = AuthCode(client, user)
     db.dbroot[auth_code.code] = auth_code
-    db.commit()
+    transaction.commit()
+    db.close()
     
+    return auth_code.code
+
+
+def validate_auth_code(client_id, client_secret, code):
+    db = DB(SERVER, PORT)
+    if code in db.dbroot:
+        auth_code = db.dbroot[code]
+        db.close()
+        
+        user = get_user()
+        if auth_code.expire > time() and \
+               auth_code.client.id == client_id and \
+               auth_code.client.secret == client_secret and \
+               auth_code.user.id = user.id:
+            
+            return True
+
+    return False
