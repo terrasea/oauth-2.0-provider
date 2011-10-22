@@ -84,3 +84,13 @@ def get_user():
         return user
 
     return None
+
+
+def create_auth_code(client_id):
+    client = get_client(client_id)
+    user = get_user()
+    auth_code = AuthCode(client, user)
+    db = DB(SERVER, PORT)
+    db.dbroot[auth_code.code] = auth_code
+    db.commit()
+    

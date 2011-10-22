@@ -22,7 +22,7 @@ def check(username, password):
     
 
 def login_required(func):
-    @config(**{})
+
     def wrap(*args, **kwargs):
         return func(args, kwargs)
 
@@ -111,5 +111,42 @@ def authorise_client(response_type,
 
     
     grant = user_resource_grant()
+    grant.client_id = client_id
+    grant.user_id = user.id
+    grant.redirect_uri = redirect_uri
+    if scope:
+        grant.scope = scope
+        grant.message = "Allow %s to access to %s?" % (client.name, scope)
+    else:
+        grant.message = "Allow %s to access all your resources?" % (client.name)
+        
+    if state:
+        grant.state = state
+
+    grant.title = "Access grant"
+    grant.action = "/auth_code"
+
     
-    pass
+    return str(grant)
+
+
+
+@expose
+def get_auth_code(allow=None,
+                  deny=None,
+                  user_id=None,
+                  client_id=None,
+                  redirect_uri=None,
+                  scope=None,
+                  state=None):
+    if deny:
+        error_str = StringIO()
+        error_str.write(redirect_uri)
+        error_list = [('error', 'access_denied')]
+        if state != None:
+            error_list.append(('state', state))
+        error_str.write('?')
+        error_str.write(urlencode(error_list))
+        return HTTPRedirect(error_str.getvalue())
+    else:
+        

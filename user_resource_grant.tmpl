@@ -14,8 +14,9 @@
         <fieldset class="grant_field">
           <legend>Resource grant?</legend>
           <div>$message</div>
-          <input type="submit" name="submit_true" value="Allow" />
-          <input type="submit" name="submit_false" value="No thanks" />
+          <input type="submit" name="allow" value="Allow"/>
+          <input type="submit" name="deny" value="Deny"/>
+          <input type="hidden" name="user_id" value="$user_id"/>
           <input type="hidden" name="client_id" value="$client_id"/>
           <input type="hidden" name="redirect_uri"
           value="$redirect_uri"/>
