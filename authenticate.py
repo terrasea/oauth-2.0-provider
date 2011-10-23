@@ -124,7 +124,7 @@ def authorise_client(response_type,
         grant.state = state
 
     grant.title = "Access grant"
-    grant.action = "/auth_code"
+    grant.action = "get_auth_code"
 
     
     return str(grant)
@@ -134,7 +134,6 @@ def authorise_client(response_type,
 @expose
 def get_auth_code(allow=None,
                   deny=None,
-                  user_id=None,
                   client_id=None,
                   redirect_uri=None,
                   scope=None,
@@ -148,5 +147,15 @@ def get_auth_code(allow=None,
         error_str.write('?')
         error_str.write(urlencode(error_list))
         return HTTPRedirect(error_str.getvalue())
-    else:
+    elif allow:
+        auth_code_str = create_auth_code(client_id, scope)
+        response_str = StringIO()
+        response_str.write(redirect_uri)
+        response_list = [('code', auth_code_str)]
+        if state:
+            response_list.append(['state', state])
+        response_str.write('?')
+        response_str.write(urlencode(response_list))
         
+        return HTTPRedirect(response_str.getvalue())
+

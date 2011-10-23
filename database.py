@@ -95,11 +95,11 @@ def get_user():
     return None
 
 
-def create_auth_code(client_id):
+def create_auth_code(client_id, scope=None):
     client = get_client(client_id)
     user = get_user()
     db = DB(SERVER, PORT)
-    auth_code = AuthCode(client, user)
+    auth_code = AuthCode(client, user, scope=scope)
     db.dbroot[auth_code.code] = auth_code
     transaction.commit()
     db.close()
@@ -107,7 +107,8 @@ def create_auth_code(client_id):
     return auth_code.code
 
 
-def validate_auth_code(client_id, client_secret, code):
+
+def get_auth_code(client_id, client_secret, code):
     db = DB(SERVER, PORT)
     if code in db.dbroot:
         auth_code = db.dbroot[code]
@@ -119,6 +120,6 @@ def validate_auth_code(client_id, client_secret, code):
                auth_code.client.secret == client_secret and \
                auth_code.user.id = user.id:
             
-            return True
+            return auth_code
 
     return False

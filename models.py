@@ -87,10 +87,11 @@ class AuthCode(Persistent):
 
     Should be deleted after first use or after it expires.
     """
-    def __init__(self, client, user, expire = 600):
+    def __init__(self, client, user, scope=None, expire=600):
         self._client = client
         self._user = user
         self._code = str(uuid4())
+        self._scope = scope
         self._expire = time() + expire
 
     @property
@@ -119,6 +120,18 @@ class AuthCode(Persistent):
         resources
         """
         return self._code
+
+
+    @property
+    def scope(self):
+        """
+        represents the resource scope
+        the client has access to.
+        
+        if scope is None then access
+        to all users resources is assumed.
+        """
+        return self._scope
 
 
     @property
@@ -235,7 +248,7 @@ if __name__ == '__main__':
 
         def test_set_redirect_uri(self):
             client = Client('test', '0909', '9089', 'https://localhost')
-            client.redirect_uri = 'bhttps://localhost/target'
+            client.redirect_uri = 'https://localhost/target'
             self.assertEqual(client.redirect_uri, 'https://localhost/target')
         
 
@@ -254,7 +267,7 @@ if __name__ == '__main__':
     class TestAuthCode(TestCase):
         def test_create_authcode(self):
             try:
-                AuthCode('client', 'user')
+                AuthCode('client', 'user', scope=None, expire=10)
             except Exception, e:
                 self.fail(str(e))
 
@@ -281,11 +294,30 @@ if __name__ == '__main__':
             self.assertNotEqual(authcode1.code, authcode2.code)
 
 
+        def test_get_scope(self):
+            authcode = AuthCode('client', 'user')
+            self.assertIsNone(authcode.scope)
+
+
+
+        def test_get_assigned_scope(self):
+            authcode = AuthCode('client', 'user', scope="all")
+            self.assertEqual(authcode.scope, "all")
+
+
+
         def test_get_expire(self):
             authcode = AuthCode('client', 'user')
             self.assertGreaterEqual(authcode.expire, time())
             self.assertLessEqual(authcode.expire, time() + 600)
             
+
+        def test_get_assigned_expire(self):
+            authcode = AuthCode('client', 'user', expire=1000)
+            self.assertGreaterEqual(authcode.expire, time())
+            self.assertLessEqual(authcode.expire, time() + 1000)
+            
+
 
     class TestUser(TestCase):
         def test_create_user(self):
