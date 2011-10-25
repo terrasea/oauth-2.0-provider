@@ -92,7 +92,8 @@ class AuthCode(Persistent):
         self._user = user
         self._code = str(uuid4())
         self._scope = scope
-        self._expire = time() + expire
+        self._expire = expire
+        self._created = time()
 
     @property
     def client(self):
@@ -143,6 +144,11 @@ class AuthCode(Persistent):
         minutes.
         """
         return self._expire
+
+
+    @property
+    def created(self):
+        return self._created
 
 
 
@@ -308,15 +314,25 @@ if __name__ == '__main__':
 
         def test_get_expire(self):
             authcode = AuthCode('client', 'user')
-            self.assertGreaterEqual(authcode.expire, time())
-            self.assertLessEqual(authcode.expire, time() + 600)
+            self.assertEqual(authcode.expire, 600)
             
 
         def test_get_assigned_expire(self):
             authcode = AuthCode('client', 'user', expire=1000)
-            self.assertGreaterEqual(authcode.expire, time())
-            self.assertLessEqual(authcode.expire, time() + 1000)
-            
+            self.assertEqual(authcode.expire, 1000)
+
+
+        def test_get_created(self):
+            '''
+            How do you check this as the time
+            will be different for each call of
+            time().  Am going to just check to
+            see if it is there and is at least
+            less than current time()
+            '''
+            authcode = AuthCode('client', 'user')
+            self.assertLessEqual(authcode.created, time())
+
 
 
     class TestUser(TestCase):

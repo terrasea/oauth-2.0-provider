@@ -1,6 +1,7 @@
 import cherrypy
 import logging
-from models import User, Client
+from models import User, Client, \
+     AuthCode, AccessToken, RefreshToken
 from ZEO.ClientStorage import ClientStorage
 from ZODB import DB
 import transaction
@@ -84,9 +85,14 @@ def get_password(username):
     return None
 
 
-def get_user():
+def get_user(uid=None):
     db = DB(SERVER, PORT)
-    if cherrypy.request.login in db.dbroot:
+    if uid not None:
+        user = db.dbroot[uid]
+        db.close()
+
+        return user
+    elif cherrypy.request.login in db.dbroot:
         user = db.dbroot[cherrypy.request.login]
         db.close()
     
@@ -114,12 +120,90 @@ def get_auth_code(client_id, client_secret, code):
         auth_code = db.dbroot[code]
         db.close()
         
-        user = get_user()
         if auth_code.expire > time() and \
                auth_code.client.id == client_id and \
-               auth_code.client.secret == client_secret and \
-               auth_code.user.id = user.id:
-            
+               auth_code.client.secret == client_secret:
             return auth_code
+    else:
+        db.close()
+
 
     return False
+
+
+
+def create_access_token_from_code(auth_code):
+    db = DB(SERVER, PORT)
+    token = AccessToken(auth_code.client,
+                        auth_code.user,
+                        scope=auth_code.scope)
+    db.dbroot[token.code] = token
+    transaction.commit()
+    db.close()
+
+    return token.code
+
+
+
+def create_access_token_from_user_pass(client_id,
+                                       client_secret,
+                                       user_id,
+                                       password,
+                                       scope):
+    db = DB(SERVER, PORT)
+    client = get_client(client_id)
+    user = get_user(user_id)
+    if client != None and \
+           user != None and \
+           client.secret == client_secret and \
+           user.password == password:
+        token = AccessToken(client,
+                            user,
+                            scope=scope)
+        db.dbroot[token.code] = token
+        transaction.commit()
+        db.close()
+
+        return token.code
+
+    db.close()
+
+    return None
+
+
+def create_refresh_token_from_code(auth_code):
+    db = DB(SERVER, PORT)
+    token = RefreshToken(auth_code.client,
+                         auth_code.user,
+                         scope=auth_code.scope)
+    db.dbroot[token.code] = token
+    transaction.commit()
+    db.close()
+
+    return token.code
+
+
+
+
+def get_token(client_id, clinet_secret, code, user):
+    '''
+    This function should get any type of token
+    since the code is unique and should only
+    return the type of token that was created
+    in create_[...]_token
+    '''
+    db = DB(SERVER, PORT)
+    if code in db.dbroot:
+        token = db.dbroot[code]
+        db.close()
+        
+        if token.expire > time() and \
+               token.client.id == client_id and \
+               token.client.secret == client_secret and \
+               token.user.id = user.id:
+            
+            return token
+
+    return False
+
+

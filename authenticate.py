@@ -7,6 +7,8 @@ from cherrypy import expose, HTTPRedirect, config
 from Cheetah.Template import Template
 from cStringIO import StringIO
 from urllib import urlencode
+from json import dumps
+
 
 from database import client_exists, get_client, \
      available_scope, get_password, get_user
@@ -159,3 +161,83 @@ def get_auth_code(allow=None,
         
         return HTTPRedirect(response_str.getvalue())
 
+
+@expose
+def get_access_token(grant_type=None,
+                     client_id=None,
+                     client_secret=None,
+                     username=None,
+                     password=None,
+                     assertion_type=None,
+                     assertion=None,
+                     scope=None,
+                     code=None,
+                     redirect_uri=None,
+                     state=None):
+    '''
+    returns a json string containing the
+    access token and/or refresh token.
+    '''
+    if grant_type not in ('authorization_code',
+                          'password',
+                          'assertion',
+                          'refresh_token',
+                          'none'):
+
+
+    if 'authorization_code' == grant_type:
+        return process_auth_code_grant(client_id,
+                                       client_secret,
+                                       scope,
+                                       code,
+                                       redirect_uri)
+    elif 'password' == grant_type:
+        return process_password_grant(client_id,
+                                      client_secret,
+                                      username,
+                                      password,
+                                      scope)
+    elif 'assertion' == grant_type:
+        return process_assertion_grant(client_id,
+                                       client_secret,
+                                       assertion_type,
+                                       assertion,
+                                       scope)
+    elif 'refresh_token' == grant_type:
+        return process_refresh_token_grant(client_id,
+                                           client_secret,
+                                           refresh_token)
+    else:
+        #the grant_type specified is not a valid one
+        
+        error_dict = dict([('error', 'invalid_grant')])
+        
+        return dumps(error_dict)
+
+
+def process_auth_code_grant(client_id,
+                            client_secret,
+                            scope,
+                            code,
+                            redirect_uri):
+    client = get_client(client_id)
+    
+    auth_code = get_auth_code(client_id,
+                              client_secret,
+                              code)
+    if auth_code is not None and \
+           client is not None and \
+           redirect_uri = client.redirect_uri:
+        access_token = create_access_token_from_code(auth_code)
+        refresh_token = create_refresh_token_from_code(auth_code)
+
+        return dumps({
+            'access_token'  : access_token.code,
+            'expires_in'    : access_token.expires,
+            'refresh_token' : refresh_token.code,
+            'scope'         : scope
+            })
+
+    else:
+        #something went wrong
+        
