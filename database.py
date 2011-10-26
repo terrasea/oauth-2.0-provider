@@ -171,9 +171,29 @@ def create_access_token_from_user_pass(client_id,
     return None
 
 
-def create_refresh_token_from_code(auth_code):
+
+def create_access_token_from_refresh_token(refresh_token):
+    '''
+    We assume that in getting the refresh_token,
+    the authentication takes place there.
+    '''
+    token = AccessToken(refresh_token.client,
+                        refresh_token.user,
+                        refresh_token.scope)
+    db.dbtoken[token.code] = token
+    refresh_token.access_token = token
+    refresh_token._p_changed = True
+    transaction.commit()
+    db.close()
+
+    return token.code
+
+
+
+def create_refresh_token_from_code(auth_code, access_token):
     db = DB(SERVER, PORT)
-    token = RefreshToken(auth_code.client,
+    token = RefreshToken(access_token,
+                         auth_code.client,
                          auth_code.user,
                          scope=auth_code.scope)
     db.dbroot[token.code] = token
@@ -183,9 +203,35 @@ def create_refresh_token_from_code(auth_code):
     return token.code
 
 
+def create_refresh_token_from_user_pass(client_id,
+                                        client_secret,
+                                        user_id,
+                                        password,
+                                        scope,
+                                        access_token):
+    db = DB(SERVER, PORT)
+    client = get_client(client_id)
+    user = get_user(user_id)
+    if client != None and \
+           user != None and \
+           client.secret == client_secret and \
+           user.password == password:
+        token = RefreshToken(access_token,
+                             client,
+                             user,
+                             scope=scope)
+        db.dbroot[token.code] = token
+        transaction.commit()
+        db.close()
+
+        return token.code
+
+    db.close()
+
+    return None
 
 
-def get_token(client_id, clinet_secret, code, user):
+def get_token(client_id, clinet_secret, code):
     '''
     This function should get any type of token
     since the code is unique and should only
@@ -199,11 +245,17 @@ def get_token(client_id, clinet_secret, code, user):
         
         if token.expire > time() and \
                token.client.id == client_id and \
-               token.client.secret == client_secret and \
-               token.user.id = user.id:
+               token.client.secret == client_secret:
             
             return token
 
     return False
 
 
+
+def delete_token(token):
+    db = DB(SERVER, PORT)
+    del db.dbroot[token.code]
+    transaction.commit()
+    db.close()
+    

@@ -197,10 +197,20 @@ class AccessToken(AuthCode):
 
 
 class RefreshToken(AuthCode):
-    def __init__(self, client, user, expire = 0):
+    def __init__(self,  access_token, client, user, expire = 0):
         super(AccessToken, self).__init__(client, user, expire)
         if expire == 0:
             self._expire = None
+        self._access_token = access_token
+
+    @property
+    def access_token(self):
+        return self._access_token
+
+    @access_token.setter
+    def access_token(self, token):
+        self._access_token = token
+        
 
 
 if __name__ == '__main__':

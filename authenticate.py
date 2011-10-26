@@ -3,11 +3,10 @@ Carries out the responsiblity of authenticating
 the client application/program and resource owner/user
 """
 
-from cherrypy import expose, HTTPRedirect, config
+from cherrypy import expose, HTTPRedirect, config, tools
 from Cheetah.Template import Template
 from cStringIO import StringIO
 from urllib import urlencode
-from json import dumps
 
 
 from database import client_exists, get_client, \
@@ -163,6 +162,7 @@ def get_auth_code(allow=None,
 
 
 @expose
+@tools.json_out()
 def get_access_token(grant_type=None,
                      client_id=None,
                      client_secret=None,
@@ -178,13 +178,7 @@ def get_access_token(grant_type=None,
     returns a json string containing the
     access token and/or refresh token.
     '''
-    if grant_type not in ('authorization_code',
-                          'password',
-                          'assertion',
-                          'refresh_token',
-                          'none'):
-
-
+    
     if 'authorization_code' == grant_type:
         return process_auth_code_grant(client_id,
                                        client_secret,
@@ -207,12 +201,14 @@ def get_access_token(grant_type=None,
         return process_refresh_token_grant(client_id,
                                            client_secret,
                                            refresh_token)
+    elif 'none' == grant_type:
+        return {'error' : 'invalid_grant' }
     else:
         #the grant_type specified is not a valid one
         
         error_dict = dict([('error', 'invalid_grant')])
         
-        return dumps(error_dict)
+        return error_dict
 
 
 def process_auth_code_grant(client_id,
@@ -231,13 +227,75 @@ def process_auth_code_grant(client_id,
         access_token = create_access_token_from_code(auth_code)
         refresh_token = create_refresh_token_from_code(auth_code)
 
-        return dumps({
+        return {
             'access_token'  : access_token.code,
             'expires_in'    : access_token.expires,
             'refresh_token' : refresh_token.code,
             'scope'         : scope
-            })
+            }
 
-    else:
-        #something went wrong
-        
+    
+    #something went wrong
+    return {'error' : 'invalid_client' }
+
+
+def process_password_grant(client_id,
+                           client_secret,
+                           username,
+                           password,
+                           scope):
+    access_token = create_access_token_from_user_pass(client_id,
+                                                      client_secret,
+                                                      username,
+                                                      password,
+                                                      scope)
+    refresh_token = create_refresh_token_from_user_pass(client_id,
+                                                        client_secret,
+                                                        user_id,
+                                                        password,
+                                                        scope)
+    if access_token is not None and \
+           refresh_token is not None:
+        return {
+            'access_token'  : access_token.code,
+            'expires_in'    : access_token.expires,
+            'refresh_token' : refresh_token.code,
+            'scope'         : scope
+            }
+
+    #something went wrong
+    return {'error' : 'invalid_client' }
+    
+
+
+
+def process_assertion_grant(client_id,
+                            client_secret,
+                            assertion_type,
+                            assertion,
+                            scope):
+    #I'm not going to support htis yet
+    return { 'error' : 'invalid_grant' }
+
+
+
+
+def process_refresh_token_grant(client_id,
+                                client_secret,
+                                refresh_token):
+    
+    token = get_token(client_id, client_secret, refresh_token)
+    if not isinstance(token, RefreshToken):
+        return { 'error' : 'invalid_grant' }
+
+    access_token = token.access_token
+    delete_token(access_token)
+    del access_token
+    
+    new_access_token = create_access_token_from_refresh_token(token)
+
+    return {
+        'access_token' : new_access_token.code,
+        'expires_in'   : new_access_token.expires,
+        'scope'        : new_access_token.scope
+        }
