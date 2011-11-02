@@ -223,7 +223,7 @@ def process_auth_code_grant(client_id,
                               code)
     if auth_code is not None and \
            client is not None and \
-           redirect_uri = client.redirect_uri:
+           redirect_uri == client.redirect_uri:
         access_token = create_access_token_from_code(auth_code)
         refresh_token = create_refresh_token_from_code(auth_code)
 
@@ -299,3 +299,8 @@ def process_refresh_token_grant(client_id,
         'expires_in'   : new_access_token.expires,
         'scope'        : new_access_token.scope
         }
+
+
+
+
+

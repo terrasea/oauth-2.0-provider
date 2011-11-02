@@ -153,10 +153,11 @@ class AuthCode(Persistent):
 
 
 class User(Persistent):
-    def __init__(self, user_id):
+    def __init__(self, user_id, password, firstname=None, lastname=None):
         self._id = user_id
-        self._firstname = None
-        self._lastname = None
+        self._password = password
+        self._firstname = firstname
+        self._lastname = lastname
 
     @property
     def id(self):
@@ -167,6 +168,16 @@ class User(Persistent):
     def id(self, user_id):
         self._id = user_id
 
+
+    @property
+    def password(self):
+        return self._password
+
+
+    @password.setter
+    def password(self, password):
+        self._password = password
+        
 
     @property
     def firstname(self):
@@ -198,7 +209,7 @@ class AccessToken(AuthCode):
 
 class RefreshToken(AuthCode):
     def __init__(self,  access_token, client, user, expire = 0):
-        super(AccessToken, self).__init__(client, user, expire)
+        super(RefreshToken, self).__init__(client, user, expire)
         if expire == 0:
             self._expire = None
         self._access_token = access_token
@@ -281,6 +292,12 @@ if __name__ == '__main__':
             
 
     class TestAuthCode(TestCase):
+        '''
+        Should be enough for all token models since
+        they all inherit from AuthCode.  They are
+        only there so that they can be diferentiated
+        from each other.
+        '''
         def test_create_authcode(self):
             try:
                 AuthCode('client', 'user', scope=None, expire=10)
@@ -345,44 +362,73 @@ if __name__ == '__main__':
 
 
 
+    class TestRefreshToken(TestCase):
+        def test_get_access_code(self):
+            code = AccessToken('client', 'user')
+            refresh = RefreshToken(code, 'client', 'user')
+            self.assertEqual(refresh.access_token, code)
+            self.assertEqual(refresh.access_token.client, code.client)
+            self.assertEqual(refresh.access_token.user, code.user)
+
+        def test_set_access_code(self):
+            code = AccessToken('client', 'user')
+            refresh = RefreshToken(code, 'client', 'user')
+            code2 = AccessToken('client2', 'user2')
+            refresh.access_token = code2
+            self.assertEqual(refresh.access_token, code2)
+            self.assertEqual(refresh.access_token.client, code2.client)
+            self.assertEqual(refresh.access_token.user, code2.user)
+
+
     class TestUser(TestCase):
         def test_create_user(self):
             try:
-                User('test')
+                User('test', 'password')
             except Exception, e:
                 self.fail(str(e))
 
 
         def test_get_id(self):
-            user = User('test')
+            user = User('test', 'password')
             self.assertEqual(user.id, 'test')
 
 
         def test_set_id(self):
-            user = User('test')
+            user = User('test', 'password')
             user.id = 'test2'
             self.assertEqual(user.id, 'test2')
 
 
+        def test_get_password(self):
+            user = User('test', 'password')
+            self.assertEqual(user.password, 'password')
+
+
+        def test_set_password(self):
+            user = User('test', 'password')
+            user.password = 'password2'
+            self.assertEqual(user.password, 'password2')
+
+
         def test_get_firstname(self):
-            user = User('test')
+            user = User('test', 'password')
             self.assertEqual(user.firstname, None)
 
 
         def test_set_firstname(self):
-            user = User('test')
+            user = User('test', 'password')
             user.firstname = 'firstname'
             self.assertEqual(user.firstname, 'firstname')
 
 
         def test_get_lastname(self):
-            user = User('test')
+            user = User('test', 'password')
             self.assertEqual(user.lastname, None)
 
 
 
         def test_set_lastname(self):
-            user = User('test')
+            user = User('test', 'password')
             user.lastname = 'lastname'
             self.assertEqual(user.lastname, 'lastname')
 
