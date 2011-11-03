@@ -134,7 +134,7 @@ def get_auth_code(client_id, client_secret, code):
         auth_code = deepcopy(db.dbroot[code])
         db.close()
         
-        if auth_code.expire > time() and \
+        if auth_code.expire + auth_code.created > time() and \
                auth_code.client.id == client_id and \
                auth_code.client.secret == client_secret:
             return auth_code
@@ -148,13 +148,21 @@ def get_auth_code(client_id, client_secret, code):
 
 def create_access_token_from_code(auth_code):
     db = DB(SERVER, PORT)
-    token = AccessToken(auth_code.client,
-                        auth_code.user,
-                        scope=auth_code.scope)
-    db.dbroot[token.code] = token
-    transaction.commit()
-    db.close()
+    try:
+        client = db.dbroot[auth_code.client.id]
+        user = db.dbroot[auth_code.user.id]
+        token = AccessToken(client,
+                            user,
+                            scope=auth_code.scope)
+        db.dbroot[token.code] = token
+        transaction.commit()
+    except Exception, e:
+        print e
+        db.close()
+        return False
 
+    db.close()
+    
     return token.code
 
 
@@ -412,9 +420,67 @@ if __name__ == '__main__':
             self.assertEqual(code, code2.code)
 
             
-           
+        def test_get_auth_code(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
             
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            transaction.commit()
+            db.close()
 
+
+            code2 = get_auth_code(TestDBFunctions.client_id,
+                                  TestDBFunctions.client_secret,
+                                  code.code)
+            self.assertIsNotNone(code2)
+            self.assertTrue(code2 != False)
+            self.assertEqual(code2.code, code.code)
+            self.assertEqual(code2.client.id, code.client.id)
+            self.assertEqual(code2.user.id, code.user.id)
+
+
+
+        def test_create_access_token_from_code(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            transaction.commit()
+            db.close()
+
+            token = create_access_token_from_code(code)
+            
+            self.assertIsNotNone(token)
+            self.assertTrue(token != False)
+            db = DB(SERVER, PORT)
+            try:
+                
+                self.assertTrue(token in db.dbroot)
+                self.assertEqual(db.dbroot[token].code, token)
+            except Exception, e:
+                print e
+            db.close()
+            
     
     main()
     

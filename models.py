@@ -202,14 +202,14 @@ class User(Persistent):
 
 
 class AccessToken(AuthCode):
-    def __init__(self, client, user, expire = 3600):
-        super(AccessToken, self).__init__(client, user, expire)
+    def __init__(self, client, user, scope=None, expire = 3600):
+        super(AccessToken, self).__init__(client, user, scope, expire)
         
 
 
 class RefreshToken(AuthCode):
-    def __init__(self,  access_token, client, user, expire = 0):
-        super(RefreshToken, self).__init__(client, user, expire)
+    def __init__(self,  access_token, client, user, scope=None, expire = 0):
+        super(RefreshToken, self).__init__(client, user, scope, expire)
         if expire == 0:
             self._expire = None
         self._access_token = access_token
