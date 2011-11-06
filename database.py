@@ -10,7 +10,7 @@ from copy import deepcopy
 import logging
 
 SERVER = 'localhost'
-PORT = 8000
+PORT = 6000
 
 
 class DB(object):
@@ -214,6 +214,7 @@ def create_access_token_from_refresh_token(refresh_token):
     except Exception, e:
         logging.error(str(e))
         transaction.abort()
+        return False
     finally:
         db.close()
 
@@ -222,14 +223,21 @@ def create_access_token_from_refresh_token(refresh_token):
 
 
 def create_refresh_token_from_code(auth_code, access_token):
-    db = DB(SERVER, PORT)
-    token = RefreshToken(access_token,
-                         auth_code.client,
-                         auth_code.user,
-                         scope=auth_code.scope)
-    db.dbroot[token.code] = token
-    transaction.commit()
-    db.close()
+    try:
+        db = DB(SERVER, PORT)
+        auth_code = deepcopy(auth_code)
+        token = RefreshToken(access_token,
+                             auth_code.client,
+                             auth_code.user,
+                             scope=auth_code.scope)
+        db.dbroot[token.code] = token
+        transaction.commit()
+    except Exception, e:
+        logging.error(str(e))
+        transaction.abort()
+        return False
+    finally:
+        db.close()
 
     return token.code
 
@@ -240,29 +248,33 @@ def create_refresh_token_from_user_pass(client_id,
                                         password,
                                         scope,
                                         access_token):
-    db = DB(SERVER, PORT)
-    client = get_client(client_id)
-    user = get_user(user_id)
-    if client != None and \
-           user != None and \
-           client.secret == client_secret and \
-           user.password == password:
-        token = RefreshToken(access_token,
-                             client,
-                             user,
-                             scope=scope)
-        db.dbroot[token.code] = token
-        transaction.commit()
+    try:
+        
+        client = get_client(client_id)
+        user = get_user(user_id)
+        if client != None and \
+               user != None and \
+               client.secret == client_secret and \
+               user.password == password:
+            db = DB(SERVER, PORT)
+            token = RefreshToken(access_token,
+                                 client,
+                                 user,
+                                 scope=scope)
+            db.dbroot[token.code] = token
+            transaction.commit()
+
+            return token.code
+    except Exception, e:
+        logging.error(str(e))
+        transaction.abort()
+    finally:
         db.close()
 
-        return token.code
-
-    db.close()
-
-    return None
+    return False
 
 
-def get_token(client_id, clinet_secret, code):
+def get_token(client_id, client_secret, code):
     '''
     This function should get any type of token
     since the code is unique and should only
@@ -274,11 +286,16 @@ def get_token(client_id, clinet_secret, code):
         token = deepcopy(db.dbroot[code])
         db.close()
         
-        if token.expire > time() and \
+        if token.expire + token.created > time() and \
                token.client.id == client_id and \
                token.client.secret == client_secret:
             
             return token
+        else:
+            logging.warn('Did not authenticate')
+    else:
+        logging.warn('code %s is not in database' % (code))
+        
 
     return False
 
@@ -569,7 +586,187 @@ if __name__ == '__main__':
                 self.fail(str(e))
             finally:
                 db.close()
-    
+
+
+
+        def test_create_refresh_token_from_code(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+            token = create_refresh_token_from_code(code, access.code)
+
+            self.assertIsNotNone(token)
+            self.assertTrue(token != False)
+            
+            try:
+                db = DB(SERVER, PORT)
+                self.assertTrue(token in db.dbroot)
+                self.assertEqual(db.dbroot[token].code, token)
+            except Exception, e:
+                self.fail(str(e))
+            finally:
+                db.close()
+
+
+
+        def test_create_refresh_token_from_user_pass(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+            token = create_refresh_token_from_user_pass(
+                TestDBFunctions.client_id,
+                TestDBFunctions.client_secret,
+                TestDBFunctions.user_id,
+                TestDBFunctions.user_password,
+                '',
+                access.code)
+
+            self.assertIsNotNone(token)
+            self.assertTrue(token != False)
+            
+            try:
+                db = DB(SERVER, PORT)
+                self.assertTrue(token in db.dbroot)
+                self.assertEqual(db.dbroot[token].code, token)
+            except Exception, e:
+                self.fail(str(e))
+            finally:
+                db.close()
+
+
+        def test_get_token(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+            #we'll get the access token here
+            token = get_token(TestDBFunctions.client_id,
+                              TestDBFunctions.client_secret,
+                              access.code)
+
+            self.assertIsNotNone(token)
+            self.assertTrue(token != False)
+            
+            try:
+                db = DB(SERVER, PORT)
+                self.assertTrue(token.code in db.dbroot)
+                self.assertEqual(db.dbroot[token.code].code, token.code)
+            except Exception, e:
+                self.fail(str(e))
+            finally:
+                db.close()
+
+
+        def test_delete_token_object(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+
+            delete_token(code)
+
+            try:
+                db = DB(SERVER, PORT)
+                self.assertFalse(code.code in db.dbroot)
+            except Exception, e:
+                self.fail(str(e))
+            finally:
+                db.close()
+
+
+        def test_delete_token_code_str(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+
+            delete_token(code.code)
+
+            try:
+                db = DB(SERVER, PORT)
+                self.assertFalse(code.code in db.dbroot)
+            except Exception, e:
+                self.fail(str(e))
+            finally:
+                db.close()
+                
     main()
     
     

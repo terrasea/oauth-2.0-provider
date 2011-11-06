@@ -5,3 +5,7 @@
 /user_resource_grant.py.bak
 /user_resource_grant.pyc
 /authenticate.pyc
+/tmp.fs
+/tmp.fs.index
+/tmp.fs.lock
+/tmp.fs.tmp
