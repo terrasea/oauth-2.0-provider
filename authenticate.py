@@ -61,7 +61,8 @@ def authorise_client(response_type,
                      scope = None,
                      state = None):
     print 'authorise'
-    if 'code' != response_type:
+    if response_type in ('code',): #'token'):
+        
         #It can only be the value 'code'
         #redirect to redirect_uri
         #with error message as a parameter
@@ -130,7 +131,10 @@ def authorise_client(response_type,
         error_str.write(urlencode(error_list))
         raise HTTPRedirect(error_str.getvalue())
 
-    
+
+    #will have to redesign user_resource_grant template to
+    #add the response type value so it knows how to format
+    #the return URL
     grant = user_resource_grant()
     grant.client_id = client_id
     grant.user_id = user.id
