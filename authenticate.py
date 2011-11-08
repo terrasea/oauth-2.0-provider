@@ -7,13 +7,16 @@ from cherrypy import expose, HTTPRedirect, config, tools, request
 from Cheetah.Template import Template
 from cStringIO import StringIO
 from urllib import urlencode
-
+import logging
 
 from database import client_exists, get_client, \
      available_scope, get_password, get_user, \
      create_auth_code, get_auth_code as db_get_auth_code, \
      create_access_token_from_code, create_refresh_token_from_code, \
-     get_token
+     get_token, create_access_token_from_user_pass, \
+     create_refresh_token_from_user_pass, RefreshToken, \
+     delete_token, create_access_token_from_refresh_token, AccessToken, \
+     get_access_token as db_get_access_token
 from user_resource_grant import user_resource_grant
 
 
@@ -23,8 +26,7 @@ def check(username, password):
     
 
 def anonymous():
-    if request.path_info in ('/token'):
-        print 'request', request.path_info
+    if request.path_info in ('/token', '/who_am_i', '/avatar'):
         return 'anonymous'
     
 
@@ -195,17 +197,13 @@ def get_access_token(grant_type=None,
                      assertion=None,
                      scope=None,
                      code=None,
+                     refresh_token=None,
                      redirect_uri=None,
                      state=None):
     '''
     returns a json string containing the
     access token and/or refresh token.
     '''
-
-    print grant_type, client_id, client_secret, \
-          username, password, assertion_type, \
-          assertion, scope, code, redirect_uri, \
-          state
     
     if 'authorization_code' == grant_type:
         return process_auth_code_grant(client_id,
@@ -255,17 +253,26 @@ def process_auth_code_grant(client_id,
            client is not None and \
            redirect_uri == client.redirect_uri:
         access_token = create_access_token_from_code(auth_code)
-        refresh_token = create_refresh_token_from_code(auth_code, access_token)
+        refresh_token = create_refresh_token_from_code(auth_code,
+                                                       access_token)
+        if not access_token:
+            return  { 'error' : 'access_denied' }
         
 
-        return {
+        tokens = {
             'access_token'  : access_token,
+            'token_type'    : 'bearer',
             'expires_in'    : get_token(client_id,
                                         client_secret,
                                         access_token).expire,
             'refresh_token' : refresh_token,
-            'scope'         : scope
             }
+
+        if scope:
+            tokens.update({'scope'         : scope})
+
+        return tokens
+    
 
     
     #something went wrong
@@ -284,17 +291,30 @@ def process_password_grant(client_id,
                                                       scope)
     refresh_token = create_refresh_token_from_user_pass(client_id,
                                                         client_secret,
-                                                        user_id,
+                                                        username,
                                                         password,
-                                                        scope)
+                                                        scope,
+                                                        access_token)
     if access_token is not None and \
            refresh_token is not None:
-        return {
+        #turn it into a AccessToken instance
+        access_token = get_token(client_id,
+                                 client_secret,
+                                 access_token)
+        #turn it into a RefreshToken instance
+        refresh_token = get_token(client_id,
+                                  client_secret,
+                                  refresh_token)
+        tokens = {
             'access_token'  : access_token.code,
-            'expires_in'    : access_token.expires,
+            'token_type'    : 'bearer',
+            'expires_in'    : access_token.expire,
             'refresh_token' : refresh_token.code,
-            'scope'         : scope
             }
+        if scope:
+            tokens.update({'scope'         : scope})
+
+        return tokens
 
     #something went wrong
     return {'error' : 'invalid_client' }
@@ -307,7 +327,7 @@ def process_assertion_grant(client_id,
                             assertion_type,
                             assertion,
                             scope):
-    #I'm not going to support htis yet
+    #I'm not going to support this yet
     return { 'error' : 'invalid_grant' }
 
 
@@ -316,7 +336,8 @@ def process_assertion_grant(client_id,
 def process_refresh_token_grant(client_id,
                                 client_secret,
                                 refresh_token):
-    
+
+    print 'refresh_token'
     token = get_token(client_id, client_secret, refresh_token)
     if not isinstance(token, RefreshToken):
         return { 'error' : 'invalid_grant' }
@@ -325,16 +346,80 @@ def process_refresh_token_grant(client_id,
     delete_token(access_token)
     del access_token
     
-    new_access_token = create_access_token_from_refresh_token(token)
+    new_access_token = get_token(client_id,
+                                 client_secret,
+                                 create_access_token_from_refresh_token(token))
 
-    return {
+    tokens = {
         'access_token' : new_access_token.code,
-        'expires_in'   : new_access_token.expires,
-        'scope'        : new_access_token.scope
+        'token_type'   : 'bearer',
+        'expires_in'   : new_access_token.expire,
         }
 
+    if new_access_token.scope:
+        tokens.update({'scope'        : new_access_token.scope})
+
+    return tokens
 
 
+
+
+def access_resource_authorised(token_str):
+    '''
+    attr token_str - the access token string representation
+    
+    returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
+    '''
+    token = db_get_access_token(token_str)
+    expired = available_scope = scope_list = True
+    print 'access_resource_authorised', token
+    if token:
+        if token.scope == None or \
+               token.scope != None and token.scope.lower() == 'all':
+            return token
+        elif token.scope != None and request.path_info in token.scope:
+            return token
+        else:
+            return {'error':'insufficient_scope'}
+    
+    #assume to be a invalid token if it got this far
+    return {'error':'invalid_token'}
+
+
+@expose
+@tools.response_headers(headers = [('Content-Type', 'image/svg')])
+def avatar(access_token=None):
+    token = access_resource_authorised(access_token)
+    if isinstance(token, AccessToken):
+        user = token.user
+        
+        try:
+            with open('users/%s/avatar.svg' % (user.id)) as avatar:
+                return avatar.read()
+        except IOError, io:
+            logging.warn(str(io))
+            return None
+            
+
+    return token
+
+@expose
+@tools.json_out()
+def who_am_i(access_token=None):
+    token = access_resource_authorised(access_token)
+    if isinstance(token, AccessToken):
+        user = token.user
+        return {'id'        : user.id,
+                'firstname' : user.firstname,
+                'lastname'  : user.lastname,
+                }
+
+    #if it got this far then
+    #something went wrong and
+    #the token should be a
+    #dict which represents the error
+    return token
+    
 
 
 if __name__ == '__main__':
@@ -364,5 +449,7 @@ if __name__ == '__main__':
     index.authorise = authorise_client
     index.get_auth_code = get_auth_code
     index.token = get_access_token
+    index.who_am_i = who_am_i
+    index.avatar = avatar
 
     quickstart(index)

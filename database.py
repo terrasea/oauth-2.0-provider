@@ -281,24 +281,49 @@ def get_token(client_id, client_secret, code):
     return the type of token that was created
     in create_[...]_token
     '''
-    db = DB(SERVER, PORT)
-    if code in db.dbroot:
-        token = deepcopy(db.dbroot[code])
-        db.close()
+    try:
+        db = DB(SERVER, PORT)
+        if code in db.dbroot:
+            token = deepcopy(db.dbroot[code])
         
-        if token.expire + token.created > time() and \
-               token.client.id == client_id and \
-               token.client.secret == client_secret:
+            if (not token.expire or token.expire + token.created > time()) and \
+                   token.client.id == client_id and \
+                   token.client.secret == client_secret:
             
-            return token
+                return token
+            else:
+                logging.warn('Did not authenticate')
         else:
-            logging.warn('Did not authenticate')
-    else:
-        logging.warn('code %s is not in database' % (code))
-        
+            logging.warn('code %s is not in database' % (code))
+    except Exception, e:
+        logging.error('get_token(%s, %s %s): %s' %
+                      (client_id, client_secret, code, str(e)))
+    finally:
+        db.close()
 
     return False
 
+
+def get_access_token(token_str):
+    try:
+        db = DB(SERVER, PORT)
+        if token_str in db.dbroot:
+            token = deepcopy(db.dbroot[token_str])
+        
+            if (not token.expire or token.expire + token.created > time()):
+                return token
+            else:
+                logging.warn('Token %s has expired for client %s and user %s' %
+                             (token.code, token.client.id, token.user.id))
+        else:
+            logging.warn('code %s is not in database' % (code))
+    except Exception, e:
+        logging.error('get_access_token(%s): %s' %
+                      (token_str, str(e)))
+    finally:
+        db.close()
+            
+    return False
 
 
 def delete_token(token):
