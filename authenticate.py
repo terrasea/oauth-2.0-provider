@@ -61,7 +61,7 @@ def authorise_client(response_type,
                      scope = None,
                      state = None):
     print 'authorise'
-    if response_type in ('code',): #'token'):
+    if response_type not in ('code','token'):
         
         #It can only be the value 'code'
         #redirect to redirect_uri
@@ -75,7 +75,7 @@ def authorise_client(response_type,
         error_str.write(urlencode(error_list))
         raise HTTPRedirect(error_str.getvalue())
 
-
+    print 'client exista'
     if not client_exists(client_id):
         #client is not found in db
         error_str = StringIO()
@@ -89,6 +89,7 @@ def authorise_client(response_type,
 
     
 
+    print 'scope'
     if scope != None:
         available = available_scope()
         scope_list = scope.split()
@@ -107,6 +108,7 @@ def authorise_client(response_type,
             raise HTTPRedirect(error_str.getvalue())
 
 
+    print 'get client'
     client = get_client(client_id)
     if client.redirect_uri != redirect_uri:
         #does not match one stored in DB for client
@@ -119,6 +121,7 @@ def authorise_client(response_type,
         error_str.write(urlencode(error_list))
         raise HTTPRedirect(error_str.getvalue())
 
+    print 'get user'
     user = get_user()
     if user == None:
         #for some reason the user logged in is not in DB
@@ -132,6 +135,7 @@ def authorise_client(response_type,
         raise HTTPRedirect(error_str.getvalue())
 
 
+    print 'set up template'
     #will have to redesign user_resource_grant template to
     #add the response type value so it knows how to format
     #the return URL
@@ -151,40 +155,64 @@ def authorise_client(response_type,
     else:
         grant.state = None
 
+
     grant.title = "Access grant"
     grant.action = "get_auth_code"
 
-    
-    return str(grant)
+
+    if response_type == 'code':
+        grant.token = None
+        return str(grant)
+    elif response_type == 'token':
+        grant.token = True
+        return str(grant)
 
 
 
 @expose
-def get_auth_code(submit_true=None,
-                  submit_false=None,
+def get_auth_code(allow=None,
+                  deny=None,
                   user_id=None,
                   client_id=None,
                   redirect_uri=None,
                   scope=None,
-                  state=None):
-    if submit_false:
+                  state=None,
+                  token=None):
+    if deny:
         error_str = StringIO()
-        print 'get_auth_code redirect_uri', redirect_uri
+        
         error_str.write(redirect_uri)
+        
         error_list = [('error', 'access_denied')]
+        
         if state != None:
             error_list.append(('state', state))
-        error_str.write('?')
+            
+        if token:
+            error_str.write('#')
+        else:
+            error_str.write('?')
+            
         error_str.write(urlencode(error_list))
+        
         raise HTTPRedirect(error_str.getvalue())
-    elif submit_true:
+    elif allow:
         auth_code_str = create_auth_code(client_id, scope)
+
         response_str = StringIO()
+
         response_str.write(redirect_uri)
+
         response_list = [('code', auth_code_str)]
+        
         if state:
             response_list.append(['state', state])
-        response_str.write('?')
+            
+        if token:
+            response_str.write('#')
+        else:
+            response_str.write('?')
+            
         response_str.write(urlencode(response_list))
         
         raise HTTPRedirect(response_str.getvalue())
@@ -221,6 +249,8 @@ def get_access_token(grant_type=None,
                                       username,
                                       password,
                                       scope)
+    elif 'client_credentials' == grant_type:
+        pass
     elif 'assertion' == grant_type:
         return process_assertion_grant(client_id,
                                        client_secret,
@@ -301,14 +331,22 @@ def process_password_grant(client_id,
                                                         access_token)
     if access_token is not None and \
            refresh_token is not None:
-        #turn it into a AccessToken instance
-        access_token = get_token(client_id,
-                                 client_secret,
-                                 access_token)
-        #turn it into a RefreshToken instance
-        refresh_token = get_token(client_id,
-                                  client_secret,
-                                  refresh_token)
+        #turn it into a AccessToken instance & RefreshToken instance
+        if client_id != None:
+            access_token = get_token(client_id,
+                                     client_secret,
+                                     access_token)
+            refresh_token = get_token(client_id,
+                                      client_secret,
+                                      refresh_token)
+        else:
+            access_token = get_token(username,
+                                     password,
+                                     access_token)
+            refresh_token = get_token(username,
+                                      password,
+                                      refresh_token)
+        logging.warn('access_token %s'% (access_token))
         tokens = {
             'access_token'  : access_token.code,
             'token_type'    : 'bearer',
@@ -405,7 +443,7 @@ def avatar(access_token=None):
             return None
             
 
-    return token
+    return str(token)
 
 @expose
 @tools.json_out()

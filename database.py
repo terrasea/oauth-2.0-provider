@@ -172,9 +172,16 @@ def create_access_token_from_user_pass(client_id,
                                        user_id,
                                        password,
                                        scope):
-    
-    client = get_client(client_id)
+    client = None
+    if client_id != None:
+        client = get_client(client_id)
+    else:
+        #create a client object from username and password
+        client = Client(user_id, user_id, password, None)
+        #make client_secret equal the password
+        client_secret = password
     user = get_user(user_id)
+    logging.warn('client %s' % (client))
     db = DB(SERVER, PORT)
     if client != None and \
            user != None and \
@@ -249,27 +256,39 @@ def create_refresh_token_from_user_pass(client_id,
                                         scope,
                                         access_token):
     try:
-        
-        client = get_client(client_id)
+        client = None
+        if client_id != None:
+            client = get_client(client_id)
+        else:
+            #not using client credentials do just create
+            #a client object from user credentials
+            client = Client(user_id, user_id, password, None)
+            #make client_secret equal password
+            client_secret = password
+            
         user = get_user(user_id)
         if client != None and \
                user != None and \
                client.secret == client_secret and \
                user.password == password:
-            db = DB(SERVER, PORT)
-            token = RefreshToken(access_token,
-                                 client,
-                                 user,
-                                 scope=scope)
-            db.dbroot[token.code] = token
-            transaction.commit()
+            try:
+                db = DB(SERVER, PORT)
+                token = RefreshToken(access_token,
+                                     client,
+                                     user,
+                                     scope=scope)
+                db.dbroot[token.code] = token
+                transaction.commit()
 
-            return token.code
+                return token.code
+            except Exception, e:
+                logging.error(str(e))
+                transaction.abort()
+            finally:
+                db.close()
     except Exception, e:
         logging.error(str(e))
-        transaction.abort()
-    finally:
-        db.close()
+    
 
     return False
 
