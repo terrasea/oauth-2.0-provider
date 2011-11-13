@@ -166,6 +166,35 @@ def create_access_token_from_code(auth_code):
     return token.code
 
 
+def create_implicit_grant_access_token(client_id, redirect_uri, scope=None):
+    db = DB(SERVER, PORT)
+    try:
+        client = db.dbroot[client_id]
+        user = get_user()
+        #the only authentication is to check the
+        #redirect_uri is the same as the one stored
+        #for the registered client
+        if client.redirect_uri == redirect_uri:
+            token = AccessToken(client,
+                                user,
+                                scope=scope)
+            db.dbroot[token.code] = token
+            transaction.commit()
+        else:
+            logging.warn('%s uri of %s does not match %s' %
+                         (client_id, client.redirect_uri, redirect_uri))
+            return False
+    except Exception, e:
+        logging.error('client is %s, user is %s, %s' %
+                      (client, user, str(e)))
+        db.close()
+        return False
+
+    db.close()
+    
+    return token.code
+
+
 
 def create_access_token_from_user_pass(client_id,
                                        client_secret,

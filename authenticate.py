@@ -16,7 +16,8 @@ from database import client_exists, get_client, \
      get_token, create_access_token_from_user_pass, \
      create_refresh_token_from_user_pass, RefreshToken, \
      delete_token, create_access_token_from_refresh_token, AccessToken, \
-     get_access_token as db_get_access_token
+     get_access_token as db_get_access_token, \
+     create_implicit_grant_access_token
 from user_resource_grant import user_resource_grant
 
 
@@ -197,21 +198,54 @@ def get_auth_code(allow=None,
         
         raise HTTPRedirect(error_str.getvalue())
     elif allow:
-        auth_code_str = create_auth_code(client_id, scope)
-
         response_str = StringIO()
 
         response_str.write(redirect_uri)
-
-        response_list = [('code', auth_code_str)]
         
-        if state:
-            response_list.append(['state', state])
-            
         if token:
             response_str.write('#')
         else:
             response_str.write('?')
+            
+        response_list = list()
+        if token:
+            auth_token_str = create_implicit_grant_access_token(client_id,
+                                                                redirect_uri,
+                                                                scope)
+            if not auth_token_str:
+                error_str = StringIO()
+        
+                error_str.write(redirect_uri)
+                
+                error_list = [('error', 'unauthorized_client')]
+        
+                if state != None:
+                    error_list.append(('state', state))
+            
+                if token:
+                    error_str.write('#')
+                else:
+                    error_str.write('?')
+            
+                error_str.write(urlencode(error_list))
+        
+                raise HTTPRedirect(error_str.getvalue())
+                
+            auth_token = db_get_access_token(auth_token_str)
+            response_list.append(('access_token', auth_token.code))
+            response_list.append(('expires_in', auth_token.expire))
+            if scope:
+                response_list.append(('scope', scope))
+            
+        else:
+            auth_code_str = create_auth_code(client_id, scope)
+            
+            response_list.append(('code', auth_code_str))
+        
+        if state:
+            response_list.append(['state', state])
+            
+
             
         response_str.write(urlencode(response_list))
         
@@ -280,8 +314,8 @@ def process_auth_code_grant(client_id,
 
     print 'process_auth_code_grant redirect_uri', redirect_uri
     auth_code = db_get_auth_code(client_id,
-                               client_secret,
-                               code)
+                                 client_secret,
+                                 code)
     print 'process_auth_code_grant', redirect_uri, client.redirect_uri
     if auth_code is not None and \
            client is not None and \
