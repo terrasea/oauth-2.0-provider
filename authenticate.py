@@ -234,6 +234,7 @@ def get_auth_code(allow=None,
             auth_token = db_get_access_token(auth_token_str)
             response_list.append(('access_token', auth_token.code))
             response_list.append(('expires_in', auth_token.expire))
+            response_list.append(('token_type', 'bearer'))
             if scope:
                 response_list.append(('scope', scope))
             
