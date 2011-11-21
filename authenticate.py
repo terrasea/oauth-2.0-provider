@@ -9,20 +9,222 @@ from cStringIO import StringIO
 from urllib import urlencode
 import logging
 
-from database import client_exists, get_client, \
-     available_scope, get_password, get_user, \
-     create_auth_code, get_auth_code as db_get_auth_code, \
-     create_access_token_from_code, create_refresh_token_from_code, \
-     get_token, create_access_token_from_user_pass, \
-     create_refresh_token_from_user_pass, RefreshToken, \
-     delete_token, create_access_token_from_refresh_token, AccessToken, \
-     get_access_token as db_get_access_token, \
-     create_implicit_grant_access_token
+import database
+import models
+
 from user_resource_grant import user_resource_grant
 
 
+class Provider(object):
+    @expose
+    def index(self, code=None, error=None):
+        return "Hello World!"
+    
+    @expose
+    def auth(self,
+             response_type=None,
+                     client_id=None,
+                     redirect_uri=None,
+                     scope = None,
+                     state = None):
+
+        if response_type not in ('code','token'):
+            
+            #It can only be the value 'code'
+            #redirect to redirect_uri
+            #with error message as a parameter
+            error_str = StringIO()
+            error_str.write(redirect_uri)
+            error_list = [('error', 'invalid_request',)]
+            if state != None:
+                error_list.append(('state', state,))
+            error_str.write('?')
+            error_str.write(urlencode(error_list))
+            raise HTTPRedirect(error_str.getvalue())
+
+
+        if not database.client_exists(client_id):
+            
+            #client is not found in db
+            error_str = StringIO()
+            error_str.write(redirect_uri)
+            error_list = [('error', 'invalid_client')]
+            if state != None:
+                error_list.append(('state', state))
+            error_str.write('?')
+            error_str.write(urlencode(error_list))
+            raise HTTPRedirect(error_str.getvalue())
+
+    
+
+
+        if scope != None:
+            available = database.available_scope()
+            scope_list = scope.split()
+            available_scope = [x for x in scope_list if x in available]
+            if available_scope != scope_list:
+                #all the values in the scope
+                #must match one in the available list
+                #since it doesn't return a invalid_scope error
+                error_str = StringIO()
+                error_str.write(redirect_uri)
+                error_list = [('error', 'invalid_scope')]
+                if state != None:
+                    error_list.append(('state', state))
+                error_str.write('?')
+                error_str.write(urlencode(error_list))
+                raise HTTPRedirect(error_str.getvalue())
+
+
+
+        client = database.get_client(client_id)
+        if client.redirect_uri != redirect_uri:
+            #does not match one stored in DB for client
+            error_str = StringIO()
+            error_str.write(redirect_uri)
+            error_list = [('error', 'redirect_uri_mismatch')]
+            if state != None:
+                error_list.append(('state', state))
+            error_str.write('?')
+            error_str.write(urlencode(error_list))
+            raise HTTPRedirect(error_str.getvalue())
+
+
+        user = database.get_user()
+        if user == None:
+            #for some reason the user logged in is not in DB
+            error_str = StringIO()
+            error_str.write(redirect_uri)
+            error_list = [('error', 'access_denied')]
+            if state != None:
+                error_list.append(('state', state))
+            error_str.write('?')
+            error_str.write(urlencode(error_list))
+            raise HTTPRedirect(error_str.getvalue())
+
+        
+
+        #will have to redesign user_resource_grant template to
+        #add the response type value so it knows how to format
+        #the return URL
+        grant = user_resource_grant()
+        grant.client_id = client_id
+        grant.user_id = user.id
+        grant.redirect_uri = redirect_uri
+        if scope:
+            grant.scope = scope
+            grant.message = "Allow %s to access to %s?" % (client.name, scope)
+        else:
+            grant.scope = None
+            grant.message = "Allow %s to access all your resources?" % (client.name)
+        
+        grant.state = state
+        
+
+
+        grant.title = "Access grant"
+        grant.action = "get_auth_code"
+
+
+        if response_type == 'code':
+            grant.token = None
+            return str(grant)
+        elif response_type == 'token':
+            grant.token = True
+            return str(grant)
+
+
+
+    @expose
+    def auth_code(self,
+                  allow=None,
+                  deny=None,
+                  user_id=None,
+                  client_id=None,
+                  redirect_uri=None,
+                  scope=None,
+                  state=None,
+                  token=None):
+        if deny:
+            error_str = StringIO()
+
+            error_str.write(redirect_uri)
+
+            error_list = [('error', 'access_denied')]
+
+            if state != None:
+                error_list.append(('state', state))
+
+            if token:
+                error_str.write('#')
+            else:
+                error_str.write('?')
+
+            error_str.write(urlencode(error_list))
+
+            raise HTTPRedirect(error_str.getvalue())
+        elif allow:
+            response_str = StringIO()
+
+            response_str.write(redirect_uri)
+
+            if token:
+                response_str.write('#')
+            else:
+                response_str.write('?')
+
+            response_list = list()
+            if token:
+                auth_token_str = database.create_implicit_grant_access_token(
+                    client_id,
+                    redirect_uri,
+                    scope)
+
+                if not auth_token_str:
+                    error_str = StringIO()
+
+                    error_str.write(redirect_uri)
+
+                    error_list = [('error', 'unauthorized_client')]
+
+                    if state:
+                        error_list.append(('state', state))
+
+                    if token:
+                        error_str.write('#')
+                    else:
+                        error_str.write('?')
+
+                    error_str.write(urlencode(error_list))
+
+                    raise HTTPRedirect(error_str.getvalue())
+
+                auth_token = database.get_access_token(auth_token_str)
+                response_list.append(('access_token', auth_token.code))
+                response_list.append(('expires_in', auth_token.expire))
+                response_list.append(('token_type', 'bearer'))
+                if scope:
+                    response_list.append(('scope', scope))
+
+            else:
+                auth_code_str = database.create_auth_code(client_id, scope)
+
+                response_list.append(('code', auth_code_str))
+
+            if state:
+                response_list.append(['state', state])
+
+
+
+            response_str.write(urlencode(response_list))
+
+            raise HTTPRedirect(response_str.getvalue())
+
+        return "<html><head><title>A problem occured</title></head><body><div>Aproblem occured</div></body></html>"
+
+
 def check(username, password):
-    if get_password(username) != password:
+    if database.get_password(username) != password:
         return u'Authentication failed'
     
 
@@ -31,19 +233,6 @@ def anonymous():
         return 'anonymous'
     
 
-def login_required(func):
-    def wrap(*args, **kwargs):
-        return func(args, kwargs)
-
-    return wrap
-
-def login_not_required(func):
-    import cherrypy
-    def wrap(*args, **kwargs):
-        cherrypy.request.login = 'anonymous'
-        return func(*args, **kwargs)
-
-    return wrap
 
 
 config.update({
@@ -55,202 +244,6 @@ config.update({
 
 
 
-@expose
-def authorise_client(response_type,
-                     client_id,
-                     redirect_uri,
-                     scope = None,
-                     state = None):
-    print 'authorise'
-    if response_type not in ('code','token'):
-        
-        #It can only be the value 'code'
-        #redirect to redirect_uri
-        #with error message as a parameter
-        error_str = StringIO()
-        error_str.write(redirect_uri)
-        error_list = [('error', 'invalid_request',)]
-        if state != None:
-            error_list.append(('state', state,))
-        error_str.write('?')
-        error_str.write(urlencode(error_list))
-        raise HTTPRedirect(error_str.getvalue())
-
-    print 'client exista'
-    if not client_exists(client_id):
-        #client is not found in db
-        error_str = StringIO()
-        error_str.write(redirect_uri)
-        error_list = [('error', 'invalid_client')]
-        if state != None:
-            error_list.append(('state', state))
-        error_str.write('?')
-        error_str.write(urlencode(error_list))
-        raise HTTPRedirect(error_str.getvalue())
-
-    
-
-    print 'scope'
-    if scope != None:
-        available = available_scope()
-        scope_list = scope.split()
-        available_scope = [x for x in scope_list if x in available]
-        if available_scope != scope_list:
-            #all the values in the scope
-            #must match one in the available list
-            #since it doesn't return a invalid_scope error
-            error_str = StringIO()
-            error_str.write(redirect_uri)
-            error_list = [('error', 'invalid_scope')]
-            if state != None:
-                error_list.append(('state', state))
-            error_str.write('?')
-            error_str.write(urlencode(error_list))
-            raise HTTPRedirect(error_str.getvalue())
-
-
-    print 'get client'
-    client = get_client(client_id)
-    if client.redirect_uri != redirect_uri:
-        #does not match one stored in DB for client
-        error_str = StringIO()
-        error_str.write(redirect_uri)
-        error_list = [('error', 'redirect_uri_mismatch')]
-        if state != None:
-            error_list.append(('state', state))
-        error_str.write('?')
-        error_str.write(urlencode(error_list))
-        raise HTTPRedirect(error_str.getvalue())
-
-    print 'get user'
-    user = get_user()
-    if user == None:
-        #for some reason the user logged in is not in DB
-        error_str = StringIO()
-        error_str.write(redirect_uri)
-        error_list = [('error', 'access_denied')]
-        if state != None:
-            error_list.append(('state', state))
-        error_str.write('?')
-        error_str.write(urlencode(error_list))
-        raise HTTPRedirect(error_str.getvalue())
-
-
-    print 'set up template'
-    #will have to redesign user_resource_grant template to
-    #add the response type value so it knows how to format
-    #the return URL
-    grant = user_resource_grant()
-    grant.client_id = client_id
-    grant.user_id = user.id
-    grant.redirect_uri = redirect_uri
-    if scope:
-        grant.scope = scope
-        grant.message = "Allow %s to access to %s?" % (client.name, scope)
-    else:
-        grant.scope = None
-        grant.message = "Allow %s to access all your resources?" % (client.name)
-        
-    if state:
-        grant.state = state
-    else:
-        grant.state = None
-
-
-    grant.title = "Access grant"
-    grant.action = "get_auth_code"
-
-
-    if response_type == 'code':
-        grant.token = None
-        return str(grant)
-    elif response_type == 'token':
-        grant.token = True
-        return str(grant)
-
-
-
-@expose
-def get_auth_code(allow=None,
-                  deny=None,
-                  user_id=None,
-                  client_id=None,
-                  redirect_uri=None,
-                  scope=None,
-                  state=None,
-                  token=None):
-    if deny:
-        error_str = StringIO()
-        
-        error_str.write(redirect_uri)
-        
-        error_list = [('error', 'access_denied')]
-        
-        if state != None:
-            error_list.append(('state', state))
-            
-        if token:
-            error_str.write('#')
-        else:
-            error_str.write('?')
-            
-        error_str.write(urlencode(error_list))
-        
-        raise HTTPRedirect(error_str.getvalue())
-    elif allow:
-        response_str = StringIO()
-
-        response_str.write(redirect_uri)
-        
-        if token:
-            response_str.write('#')
-        else:
-            response_str.write('?')
-            
-        response_list = list()
-        if token:
-            auth_token_str = create_implicit_grant_access_token(client_id,
-                                                                redirect_uri,
-                                                                scope)
-            if not auth_token_str:
-                error_str = StringIO()
-        
-                error_str.write(redirect_uri)
-                
-                error_list = [('error', 'unauthorized_client')]
-        
-                if state != None:
-                    error_list.append(('state', state))
-            
-                if token:
-                    error_str.write('#')
-                else:
-                    error_str.write('?')
-            
-                error_str.write(urlencode(error_list))
-        
-                raise HTTPRedirect(error_str.getvalue())
-                
-            auth_token = db_get_access_token(auth_token_str)
-            response_list.append(('access_token', auth_token.code))
-            response_list.append(('expires_in', auth_token.expire))
-            response_list.append(('token_type', 'bearer'))
-            if scope:
-                response_list.append(('scope', scope))
-            
-        else:
-            auth_code_str = create_auth_code(client_id, scope)
-            
-            response_list.append(('code', auth_code_str))
-        
-        if state:
-            response_list.append(['state', state])
-            
-
-            
-        response_str.write(urlencode(response_list))
-        
-        raise HTTPRedirect(response_str.getvalue())
 
 
 @expose
@@ -311,18 +304,18 @@ def process_auth_code_grant(client_id,
                             scope,
                             code,
                             redirect_uri):
-    client = get_client(client_id)
+    client = database.get_client(client_id)
 
     print 'process_auth_code_grant redirect_uri', redirect_uri
-    auth_code = db_get_auth_code(client_id,
-                                 client_secret,
-                                 code)
+    auth_code = database.get_auth_code(client_id,
+                                       client_secret,
+                                       code)
     print 'process_auth_code_grant', redirect_uri, client.redirect_uri
     if auth_code is not None and \
            client is not None and \
            redirect_uri == client.redirect_uri:
-        access_token = create_access_token_from_code(auth_code)
-        refresh_token = create_refresh_token_from_code(auth_code,
+        access_token = database.create_access_token_from_code(auth_code)
+        refresh_token = database.create_refresh_token_from_code(auth_code,
                                                        access_token)
         if not access_token:
             return  { 'error' : 'access_denied' }
@@ -331,9 +324,9 @@ def process_auth_code_grant(client_id,
         tokens = {
             'access_token'  : access_token,
             'token_type'    : 'bearer',
-            'expires_in'    : get_token(client_id,
-                                        client_secret,
-                                        access_token).expire,
+            'expires_in'    : database.get_token(client_id,
+                                                 client_secret,
+                                                 access_token).expire,
             'refresh_token' : refresh_token,
             }
 
@@ -353,34 +346,36 @@ def process_password_grant(client_id,
                            username,
                            password,
                            scope):
-    access_token = create_access_token_from_user_pass(client_id,
-                                                      client_secret,
-                                                      username,
-                                                      password,
-                                                      scope)
-    refresh_token = create_refresh_token_from_user_pass(client_id,
-                                                        client_secret,
-                                                        username,
-                                                        password,
-                                                        scope,
-                                                        access_token)
+    access_token = database.create_access_token_from_user_pass(
+        client_id,
+        client_secret,
+        username,
+        password,
+        scope)
+    refresh_token = database.create_refresh_token_from_user_pass(
+        client_id,
+        client_secret,
+        username,
+        password,
+        scope,
+        access_token)
     if access_token is not None and \
            refresh_token is not None:
         #turn it into a AccessToken instance & RefreshToken instance
         if client_id != None:
-            access_token = get_token(client_id,
-                                     client_secret,
-                                     access_token)
-            refresh_token = get_token(client_id,
-                                      client_secret,
-                                      refresh_token)
+            access_token = database.get_token(client_id,
+                                              client_secret,
+                                              access_token)
+            refresh_token = database.get_token(client_id,
+                                               client_secret,
+                                               refresh_token)
         else:
-            access_token = get_token(username,
-                                     password,
-                                     access_token)
-            refresh_token = get_token(username,
-                                      password,
-                                      refresh_token)
+            access_token = database.get_token(username,
+                                              password,
+                                              access_token)
+            refresh_token = database.get_token(username,
+                                               password,
+                                               refresh_token)
         logging.warn('access_token %s'% (access_token))
         tokens = {
             'access_token'  : access_token.code,
@@ -415,17 +410,20 @@ def process_refresh_token_grant(client_id,
                                 refresh_token):
 
     print 'refresh_token'
-    token = get_token(client_id, client_secret, refresh_token)
-    if not isinstance(token, RefreshToken):
+    token = database.get_token(client_id,
+                               client_secret,
+                               refresh_token)
+    if not isinstance(token, models.RefreshToken):
         return { 'error' : 'invalid_grant' }
 
     access_token = token.access_token
     delete_token(access_token)
     del access_token
     
-    new_access_token = get_token(client_id,
-                                 client_secret,
-                                 create_access_token_from_refresh_token(token))
+    new_access_token = database.get_token(
+        client_id,
+        client_secret,
+        create_access_token_from_refresh_token(token))
 
     tokens = {
         'access_token' : new_access_token.code,
@@ -447,7 +445,7 @@ def access_resource_authorised(token_str):
     
     returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
     '''
-    token = db_get_access_token(token_str)
+    token = database.get_access_token(token_str)
     expired = available_scope = scope_list = True
     print 'access_resource_authorised', token
     if token:
@@ -466,8 +464,8 @@ def access_resource_authorised(token_str):
 @expose
 @tools.response_headers(headers = [('Content-Type', 'image/svg')])
 def avatar(access_token=None):
-    token = access_resource_authorised(access_token)
-    if isinstance(token, AccessToken):
+    token = database.access_resource_authorised(access_token)
+    if isinstance(token, models.AccessToken):
         user = token.user
         
         try:
@@ -483,8 +481,8 @@ def avatar(access_token=None):
 @expose
 @tools.json_out()
 def who_am_i(access_token=None):
-    token = access_resource_authorised(access_token)
-    if isinstance(token, AccessToken):
+    token = database.get_access_token(access_token)
+    if isinstance(token, models.AccessToken):
         user = token.user
         return {'id'        : user.id,
                 'firstname' : user.firstname,
@@ -523,9 +521,8 @@ if __name__ == '__main__':
 
     index = Root()
 
-    index.authorise = authorise_client
-    index.get_auth_code = get_auth_code
-    index.token = get_access_token
+    index.oauth = Provider()
+
     index.who_am_i = who_am_i
     index.avatar = avatar
 
