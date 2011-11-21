@@ -23,10 +23,10 @@ class Provider(object):
     @expose
     def auth(self,
              response_type=None,
-                     client_id=None,
-                     redirect_uri=None,
-                     scope = None,
-                     state = None):
+             client_id=None,
+             redirect_uri=None,
+             scope = None,
+             state = None):
 
         if response_type not in ('code','token'):
             
@@ -136,7 +136,7 @@ class Provider(object):
 
 
     @expose
-    def auth_code(self,
+    def get_auth_code(self,
                   allow=None,
                   deny=None,
                   user_id=None,
@@ -223,13 +223,209 @@ class Provider(object):
         return "<html><head><title>A problem occured</title></head><body><div>Aproblem occured</div></body></html>"
 
 
+    @expose
+    @tools.json_out()
+    def token(self,
+              grant_type=None,
+              client_id=None,
+              client_secret=None,
+              username=None,
+              password=None,
+              assertion_type=None,
+              assertion=None,
+              scope=None,
+              code=None,
+              refresh_token=None,
+              redirect_uri=None,
+              state=None):
+        '''
+        returns a json string containing the
+        access token and/or refresh token.
+        '''
+
+        if 'authorization_code' == grant_type:
+            return self.process_auth_code_grant(client_id,
+                                                client_secret,
+                                                scope,
+                                                code,
+                                                redirect_uri)
+        elif 'password' == grant_type:
+            return self.process_password_grant(client_id,
+                                               client_secret,
+                                               username,
+                                               password,
+                                               scope)
+        elif 'client_credentials' == grant_type:
+            pass
+        elif 'assertion' == grant_type:
+            return self.process_assertion_grant(client_id,
+                                                client_secret,
+                                                assertion_type,
+                                                assertion,
+                                                scope)
+        elif 'refresh_token' == grant_type:
+            return self.process_refresh_token_grant(client_id,
+                                                    client_secret,
+                                                    refresh_token)
+        elif 'none' == grant_type:
+            return {'error' : 'invalid_grant' }
+        else:
+            #the grant_type specified is not a valid one
+
+            error_dict = dict([('error', 'invalid_grant')])
+
+            return error_dict
+
+
+    def process_auth_code_grant(self,
+                                client_id,
+                                client_secret,
+                                scope,
+                                code,
+                                redirect_uri):
+        client = database.get_client(client_id)
+
+        print 'process_auth_code_grant redirect_uri', redirect_uri
+        auth_code = database.get_auth_code(client_id,
+                                           client_secret,
+                                           code)
+        print 'process_auth_code_grant', redirect_uri, client.redirect_uri
+        if auth_code is not None and \
+               client is not None and \
+               redirect_uri == client.redirect_uri:
+            access_token = database.create_access_token_from_code(auth_code)
+            refresh_token = database.create_refresh_token_from_code(auth_code,
+                                                           access_token)
+            if not access_token:
+                return  { 'error' : 'access_denied' }
+
+
+            tokens = {
+                'access_token'  : access_token,
+                'token_type'    : 'bearer',
+                'expires_in'    : database.get_token(client_id,
+                                                     client_secret,
+                                                     access_token).expire,
+                'refresh_token' : refresh_token,
+                }
+
+            if scope:
+                tokens.update({'scope'         : scope})
+
+            return tokens
+
+
+
+        #something went wrong
+        return {'error' : 'invalid_client' }
+
+
+    def process_password_grant(self,
+                               client_id,
+                               client_secret,
+                               username,
+                               password,
+                               scope):
+        access_token = database.create_access_token_from_user_pass(
+            client_id,
+            client_secret,
+            username,
+            password,
+            scope)
+        refresh_token = database.create_refresh_token_from_user_pass(
+            client_id,
+            client_secret,
+            username,
+            password,
+            scope,
+            access_token)
+        if access_token is not None and \
+               refresh_token is not None:
+            #turn it into a AccessToken instance & RefreshToken instance
+            if client_id != None:
+                access_token = database.get_token(client_id,
+                                                  client_secret,
+                                                  access_token)
+                refresh_token = database.get_token(client_id,
+                                                   client_secret,
+                                                   refresh_token)
+            else:
+                access_token = database.get_token(username,
+                                                  password,
+                                                  access_token)
+                refresh_token = database.get_token(username,
+                                                   password,
+                                                   refresh_token)
+            logging.warn('access_token %s'% (access_token))
+            tokens = {
+                'access_token'  : access_token.code,
+                'token_type'    : 'bearer',
+                'expires_in'    : access_token.expire,
+                'refresh_token' : refresh_token.code,
+                }
+            if scope:
+                tokens.update({'scope'         : scope})
+
+            return tokens
+
+        #something went wrong
+        return {'error' : 'invalid_client' }
+
+
+
+
+    def process_assertion_grant(self,
+                                client_id,
+                                client_secret,
+                                assertion_type,
+                                assertion,
+                                scope):
+        #I'm not going to support this yet
+        return { 'error' : 'invalid_grant' }
+
+
+
+
+    def process_refresh_token_grant(self,
+                                    client_id,
+                                    client_secret,
+                                    refresh_token):
+
+        print 'refresh_token'
+        token = database.get_token(client_id,
+                                   client_secret,
+                                   refresh_token)
+        if not isinstance(token, models.RefreshToken):
+            return { 'error' : 'invalid_grant' }
+
+        access_token = token.access_token
+        delete_token(access_token)
+        del access_token
+
+        new_access_token = database.get_token(
+            client_id,
+            client_secret,
+            create_access_token_from_refresh_token(token))
+
+        tokens = {
+            'access_token' : new_access_token.code,
+            'token_type'   : 'bearer',
+            'expires_in'   : new_access_token.expire,
+            }
+
+        if new_access_token.scope:
+            tokens.update({'scope'        : new_access_token.scope})
+
+        return tokens
+
+
 def check(username, password):
     if database.get_password(username) != password:
         return u'Authentication failed'
     
 
 def anonymous():
-    if request.path_info in ('/token', '/who_am_i', '/avatar'):
+    if request.path_info in ('/oauth/token', '/who_am_i', '/avatar'):
         return 'anonymous'
     
 
@@ -246,195 +442,6 @@ config.update({
 
 
 
-@expose
-@tools.json_out()
-def get_access_token(grant_type=None,
-                     client_id=None,
-                     client_secret=None,
-                     username=None,
-                     password=None,
-                     assertion_type=None,
-                     assertion=None,
-                     scope=None,
-                     code=None,
-                     refresh_token=None,
-                     redirect_uri=None,
-                     state=None):
-    '''
-    returns a json string containing the
-    access token and/or refresh token.
-    '''
-    
-    if 'authorization_code' == grant_type:
-        return process_auth_code_grant(client_id,
-                                       client_secret,
-                                       scope,
-                                       code,
-                                       redirect_uri)
-    elif 'password' == grant_type:
-        return process_password_grant(client_id,
-                                      client_secret,
-                                      username,
-                                      password,
-                                      scope)
-    elif 'client_credentials' == grant_type:
-        pass
-    elif 'assertion' == grant_type:
-        return process_assertion_grant(client_id,
-                                       client_secret,
-                                       assertion_type,
-                                       assertion,
-                                       scope)
-    elif 'refresh_token' == grant_type:
-        return process_refresh_token_grant(client_id,
-                                           client_secret,
-                                           refresh_token)
-    elif 'none' == grant_type:
-        return {'error' : 'invalid_grant' }
-    else:
-        #the grant_type specified is not a valid one
-        
-        error_dict = dict([('error', 'invalid_grant')])
-        
-        return error_dict
-
-
-def process_auth_code_grant(client_id,
-                            client_secret,
-                            scope,
-                            code,
-                            redirect_uri):
-    client = database.get_client(client_id)
-
-    print 'process_auth_code_grant redirect_uri', redirect_uri
-    auth_code = database.get_auth_code(client_id,
-                                       client_secret,
-                                       code)
-    print 'process_auth_code_grant', redirect_uri, client.redirect_uri
-    if auth_code is not None and \
-           client is not None and \
-           redirect_uri == client.redirect_uri:
-        access_token = database.create_access_token_from_code(auth_code)
-        refresh_token = database.create_refresh_token_from_code(auth_code,
-                                                       access_token)
-        if not access_token:
-            return  { 'error' : 'access_denied' }
-        
-
-        tokens = {
-            'access_token'  : access_token,
-            'token_type'    : 'bearer',
-            'expires_in'    : database.get_token(client_id,
-                                                 client_secret,
-                                                 access_token).expire,
-            'refresh_token' : refresh_token,
-            }
-
-        if scope:
-            tokens.update({'scope'         : scope})
-
-        return tokens
-    
-
-    
-    #something went wrong
-    return {'error' : 'invalid_client' }
-
-
-def process_password_grant(client_id,
-                           client_secret,
-                           username,
-                           password,
-                           scope):
-    access_token = database.create_access_token_from_user_pass(
-        client_id,
-        client_secret,
-        username,
-        password,
-        scope)
-    refresh_token = database.create_refresh_token_from_user_pass(
-        client_id,
-        client_secret,
-        username,
-        password,
-        scope,
-        access_token)
-    if access_token is not None and \
-           refresh_token is not None:
-        #turn it into a AccessToken instance & RefreshToken instance
-        if client_id != None:
-            access_token = database.get_token(client_id,
-                                              client_secret,
-                                              access_token)
-            refresh_token = database.get_token(client_id,
-                                               client_secret,
-                                               refresh_token)
-        else:
-            access_token = database.get_token(username,
-                                              password,
-                                              access_token)
-            refresh_token = database.get_token(username,
-                                               password,
-                                               refresh_token)
-        logging.warn('access_token %s'% (access_token))
-        tokens = {
-            'access_token'  : access_token.code,
-            'token_type'    : 'bearer',
-            'expires_in'    : access_token.expire,
-            'refresh_token' : refresh_token.code,
-            }
-        if scope:
-            tokens.update({'scope'         : scope})
-
-        return tokens
-
-    #something went wrong
-    return {'error' : 'invalid_client' }
-    
-
-
-
-def process_assertion_grant(client_id,
-                            client_secret,
-                            assertion_type,
-                            assertion,
-                            scope):
-    #I'm not going to support this yet
-    return { 'error' : 'invalid_grant' }
-
-
-
-
-def process_refresh_token_grant(client_id,
-                                client_secret,
-                                refresh_token):
-
-    print 'refresh_token'
-    token = database.get_token(client_id,
-                               client_secret,
-                               refresh_token)
-    if not isinstance(token, models.RefreshToken):
-        return { 'error' : 'invalid_grant' }
-
-    access_token = token.access_token
-    delete_token(access_token)
-    del access_token
-    
-    new_access_token = database.get_token(
-        client_id,
-        client_secret,
-        create_access_token_from_refresh_token(token))
-
-    tokens = {
-        'access_token' : new_access_token.code,
-        'token_type'   : 'bearer',
-        'expires_in'   : new_access_token.expire,
-        }
-
-    if new_access_token.scope:
-        tokens.update({'scope'        : new_access_token.scope})
-
-    return tokens
 
 
 
@@ -464,7 +471,7 @@ def access_resource_authorised(token_str):
 @expose
 @tools.response_headers(headers = [('Content-Type', 'image/svg')])
 def avatar(access_token=None):
-    token = database.access_resource_authorised(access_token)
+    token = access_resource_authorised(access_token)
     if isinstance(token, models.AccessToken):
         user = token.user
         
@@ -481,7 +488,7 @@ def avatar(access_token=None):
 @expose
 @tools.json_out()
 def who_am_i(access_token=None):
-    token = database.get_access_token(access_token)
+    token = access_resource_authorised(access_token)
     if isinstance(token, models.AccessToken):
         user = token.user
         return {'id'        : user.id,
@@ -512,7 +519,7 @@ if __name__ == '__main__':
                         'client_secret': 'id',
                         'code': code,
                         'redirect_uri': 'http://localhost:8080',}
-                request = Request('http://localhost:8080/token',
+                request = Request('http://localhost:8080/oauth/token',
                                   urlencode(data))
                 response = urlopen(request)
                 message = response.read()
