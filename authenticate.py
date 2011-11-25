@@ -445,7 +445,7 @@ def access_resource_authorised(token_str):
     '''
     token = database.get_access_token(token_str)
     expired = available_scope = scope_list = True
-    print 'access_resource_authorised', token
+
     if token and isinstance(token, AccessToken):
         if token.scope == None or \
                token.scope != None and token.scope.lower() == 'all':
