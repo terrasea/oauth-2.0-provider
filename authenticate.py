@@ -446,26 +446,6 @@ config.update({
 
 
 
-def access_resource_authorised(token_str):
-    '''
-    attr token_str - the access token string representation
-    
-    returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
-    '''
-    token = database.get_access_token(token_str)
-    expired = available_scope = scope_list = True
-    print 'access_resource_authorised', token
-    if token:
-        if token.scope == None or \
-               token.scope != None and token.scope.lower() == 'all':
-            return token
-        elif token.scope != None and request.path_info in token.scope:
-            return token
-        else:
-            return {'error':'insufficient_scope'}
-    
-    #assume to be a invalid token if it got this far
-    return {'error':'invalid_token'}
 
 
 @expose

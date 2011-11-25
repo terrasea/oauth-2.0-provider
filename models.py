@@ -20,11 +20,13 @@ class Client(Persistent):
                  client_id,
                  client_secret,
                  redirect_uri,
+                 available_scope = None,
                  client_type='confidential'):
         self._client_name = client_name
         self._client_id = client_id
         self._client_secret = client_secret
         self._redirect_uri = redirect_uri
+        self._available_scope = available_scope
         self._client_type = client_type
 
 
@@ -69,6 +71,19 @@ class Client(Persistent):
         self._redirect_uri = redirect_uri
 
 
+
+    @property
+    def available_scope(self):
+        return self._available_scope
+
+
+
+    @available_scope.setter
+    def available_scope(self, scope):
+        self._available_scope = scope
+
+        
+
     @property
     def type(self):
         return self._client_type
@@ -80,7 +95,7 @@ class Client(Persistent):
         
 
 
-class AuthCode(Persistent):
+class Code(Persistent):
     """
     Represents the auth code created when a resource
     owner and client authenticates.
@@ -152,6 +167,12 @@ class AuthCode(Persistent):
 
 
 
+class AuthCode(Code):
+    def __init__(self, client, user, scope=None, expire = 600):
+        super(AuthCode, self).__init__(client, user, scope, expire)
+
+
+
 class User(Persistent):
     def __init__(self, user_id, password, firstname=None, lastname=None):
         self._id = user_id
@@ -201,13 +222,13 @@ class User(Persistent):
 
 
 
-class AccessToken(AuthCode):
+class AccessToken(Code):
     def __init__(self, client, user, scope=None, expire = 3600):
         super(AccessToken, self).__init__(client, user, scope, expire)
         
 
 
-class RefreshToken(AuthCode):
+class RefreshToken(Code):
     def __init__(self,  access_token, client, user, scope=None, expire = 0):
         super(RefreshToken, self).__init__(client, user, scope, expire)
         if expire == 0:
@@ -277,6 +298,17 @@ if __name__ == '__main__':
             client = Client('test', '0909', '9089', 'https://localhost')
             client.redirect_uri = 'https://localhost/target'
             self.assertEqual(client.redirect_uri, 'https://localhost/target')
+
+
+        def test_get_available_scope(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            self.assertEqual(client.available_scope, None)
+
+
+        def test_set_available_scope(self):
+            client = Client('test', '0909', '9089', 'https://localhost')
+            client.available_scope = ['/one', '/two']
+            self.assertEqual(client.available_scope, ['/one', '/two'])
         
 
         def test_get_type(self):

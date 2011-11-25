@@ -7,7 +7,6 @@ from ZODB import DB as ZDB
 import transaction
 from time import time
 from copy import deepcopy
-import logging
 
 SERVER = 'localhost'
 PORT = 6000
@@ -32,12 +31,14 @@ def create_client(client_name,
                   client_id,
                   client_secret,
                   redirect_uri,
-                  client_type):
+                  available_scope = None,
+                  client_type='confidential'):
     db = DB(SERVER, PORT)
     client = Client( client_name,
                      client_id,
                      client_secret,
                      redirect_uri,
+                     available_scope,
                      client_type)
     db.dbroot[client_id] = client
     transaction.commit()
@@ -74,8 +75,18 @@ def get_client(client_id):
     return None
 
 
-def available_scope():
+def available_scope(client=None):
+    while client and not isinstance(client, Client):
+        client = get_client(client)
+    else:
+        if not client:
+            return tuple()
+
+    if client.available_scope:
+        return client.available_scope
+
     return tuple()
+    
 
 
 def get_password(username):
@@ -210,7 +221,7 @@ def create_access_token_from_user_pass(client_id,
         #make client_secret equal the password
         client_secret = password
     user = get_user(user_id)
-    logging.warn('client %s' % (client))
+    
     db = DB(SERVER, PORT)
     if client != None and \
            user != None and \
@@ -352,13 +363,38 @@ def get_token(client_id, client_secret, code):
     return False
 
 
+def access_resource_authorised(token_str):
+    '''
+    attr token_str - the access token string representation
+    
+    returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
+    '''
+    token = database.get_access_token(token_str)
+    expired = available_scope = scope_list = True
+    print 'access_resource_authorised', token
+    if token and isinstance(token, AccessToken):
+        if token.scope == None or \
+               token.scope != None and token.scope.lower() == 'all':
+            return token
+        elif token.scope != None and request.path_info in token.scope:
+            return token
+        else:
+            return {'error':'insufficient_scope'}
+    
+    #assume to be a invalid token if it got this far
+    return {'error':'invalid_token'}
+
+
+
 def get_access_token(token_str):
     try:
         db = DB(SERVER, PORT)
         if token_str in db.dbroot:
             token = deepcopy(db.dbroot[token_str])
-        
-            if (not token.expire or token.expire + token.created > time()):
+            
+            if isinstance(token, AccessToken) and \
+                   not token.expire or \
+                   token.expire + token.created > time():
                 return token
             else:
                 logging.warn('Token %s has expired for client %s and user %s' %
@@ -424,6 +460,7 @@ if __name__ == '__main__':
                                    TestDBFunctions.client_id,
                                    TestDBFunctions.client_secret,
                                    TestDBFunctions.redirect_uri,
+                                   None,
                                    TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             self.assertEqual(db.dbroot[TestDBFunctions.client_id].id, client.id)
@@ -436,6 +473,7 @@ if __name__ == '__main__':
                             TestDBFunctions.client_id,
                             TestDBFunctions.client_secret,
                             TestDBFunctions.redirect_uri,
+                            None,
                             TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             db.dbroot[TestDBFunctions.client_id] = client
@@ -450,6 +488,7 @@ if __name__ == '__main__':
                             TestDBFunctions.client_id,
                             TestDBFunctions.client_secret,
                             TestDBFunctions.redirect_uri,
+                            None,
                             TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             db.dbroot[TestDBFunctions.client_id] = client
@@ -839,6 +878,36 @@ if __name__ == '__main__':
                 self.fail(str(e))
             finally:
                 db.close()
+
+
+        def test_get_access_token(self):
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+            cherrypy.request.login = TestDBFunctions.user_id
+            
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            code = AuthCode(client, user)
+            access = AccessToken(client, user)
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            db.dbroot[code.code] = code
+            db.dbroot[access.code] = access
+            transaction.commit()
+            db.close()
+
+
+            token = get_access_token(access.code)
+            
+            self.assertFalse(isinstance(token, AuthCode))
+            self.assertFalse(isinstance(token, RefreshToken))
+            self.assertTrue(isinstance(token, AccessToken))
+            
+            
                 
     main()
     
