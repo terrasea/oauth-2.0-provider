@@ -31,14 +31,12 @@ def create_client(client_name,
                   client_id,
                   client_secret,
                   redirect_uri,
-                  available_scope = None,
                   client_type='confidential'):
     db = DB(SERVER, PORT)
     client = Client( client_name,
                      client_id,
                      client_secret,
                      redirect_uri,
-                     available_scope,
                      client_type)
     db.dbroot[client_id] = client
     transaction.commit()
@@ -75,17 +73,6 @@ def get_client(client_id):
     return None
 
 
-def available_scope(client=None):
-    while client and not isinstance(client, Client):
-        client = get_client(client)
-    else:
-        if not client:
-            return tuple()
-
-    if client.available_scope:
-        return client.available_scope
-
-    return tuple()
     
 
 
@@ -460,7 +447,6 @@ if __name__ == '__main__':
                                    TestDBFunctions.client_id,
                                    TestDBFunctions.client_secret,
                                    TestDBFunctions.redirect_uri,
-                                   None,
                                    TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             self.assertEqual(db.dbroot[TestDBFunctions.client_id].id, client.id)
@@ -473,7 +459,6 @@ if __name__ == '__main__':
                             TestDBFunctions.client_id,
                             TestDBFunctions.client_secret,
                             TestDBFunctions.redirect_uri,
-                            None,
                             TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             db.dbroot[TestDBFunctions.client_id] = client
@@ -488,7 +473,6 @@ if __name__ == '__main__':
                             TestDBFunctions.client_id,
                             TestDBFunctions.client_secret,
                             TestDBFunctions.redirect_uri,
-                            None,
                             TestDBFunctions.client_type)
             db = DB(SERVER, PORT)
             db.dbroot[TestDBFunctions.client_id] = client

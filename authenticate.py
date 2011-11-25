@@ -16,6 +16,10 @@ from user_resource_grant import user_resource_grant
 
 
 class Provider(object):
+
+    def __init__(self, scope=tuple()):
+        self._available_scope = scope
+    
     @expose
     def index(self, code=None, error=None):
         return "Hello World!"
@@ -59,7 +63,7 @@ class Provider(object):
 
 
         if scope != None:
-            available = database.available_scope()
+            available = self.available_scope()
             scope_list = scope.split()
             available_scope = [x for x in scope_list if x in available]
             if available_scope != scope_list:
@@ -417,6 +421,18 @@ class Provider(object):
             tokens.update({'scope'        : new_access_token.scope})
 
         return tokens
+
+
+
+
+    @property
+    def available_scope(self):
+        return self._available_scope
+
+
+    @available_scope.setter
+    def available_scope(self, scope):
+        self._available_scope = scope
 
 
 def check(username, password):

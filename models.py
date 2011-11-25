@@ -20,13 +20,11 @@ class Client(Persistent):
                  client_id,
                  client_secret,
                  redirect_uri,
-                 available_scope = None,
                  client_type='confidential'):
         self._client_name = client_name
         self._client_id = client_id
         self._client_secret = client_secret
         self._redirect_uri = redirect_uri
-        self._available_scope = available_scope
         self._client_type = client_type
 
 
@@ -71,18 +69,6 @@ class Client(Persistent):
         self._redirect_uri = redirect_uri
 
 
-
-    @property
-    def available_scope(self):
-        return self._available_scope
-
-
-
-    @available_scope.setter
-    def available_scope(self, scope):
-        self._available_scope = scope
-
-        
 
     @property
     def type(self):
@@ -299,17 +285,6 @@ if __name__ == '__main__':
             client.redirect_uri = 'https://localhost/target'
             self.assertEqual(client.redirect_uri, 'https://localhost/target')
 
-
-        def test_get_available_scope(self):
-            client = Client('test', '0909', '9089', 'https://localhost')
-            self.assertEqual(client.available_scope, None)
-
-
-        def test_set_available_scope(self):
-            client = Client('test', '0909', '9089', 'https://localhost')
-            client.available_scope = ['/one', '/two']
-            self.assertEqual(client.available_scope, ['/one', '/two'])
-        
 
         def test_get_type(self):
             client = Client('test', '0909', '9089', 'https://localhost')
