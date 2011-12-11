@@ -27,6 +27,37 @@ class DB(object):
 
 
 
+def add_anonymous_url(url):
+    try:
+        db = DB(SERVER, PORT)
+        if 'anonymous_urls' in db.dbroot:
+            urls = db.dbroot['anonymous_urls']
+            urls.append(url)
+            db.dbroot['anonymous_urls'] = urls
+        else:
+            urls = list()
+            urls.append(url)
+            db.dbroot['anonymous_urls'] = urls
+        transaction.commit()
+    except Exception, e:
+        logging.error('add_anonymous_url: %s' % (str(e)))
+        transaction.abort()
+    finally:
+        db.close()
+        
+
+def get_anonymous_urls():
+    try:
+        db = DB(SERVER, PORT)
+        return db.dbroot['anonymous_urls']
+    except Exception, e:
+        logging.error('get_anonymous_urls: %s' % (str(e)))
+    finally:
+        db.close()
+
+    return None
+
+
 def create_client(client_name,
                   client_id,
                   client_secret,
@@ -81,8 +112,10 @@ def get_password(username):
     if username in db.dbroot:
         try:
             user = db.dbroot[username]
-        
+            print user
             return user.password
+        except Exception, e:
+            logging.error('get_password(): %s' % (str(e)))
         finally:
             db.close()
 

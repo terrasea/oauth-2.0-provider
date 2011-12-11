@@ -439,14 +439,15 @@ class Provider(object):
 
 def access_resource_authorised(token_str):
     '''
-    attr token_str - the access token string representation
+    @attr token_str - the access token string representation
     
-    returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
+    @returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
     '''
     token = database.get_access_token(token_str)
     expired = available_scope = scope_list = True
 
-    if token and isinstance(token, AccessToken):
+    #if token is not false or none checks to see if it is a AccessToken or not
+    if token and isinstance(token, models.AccessToken):
         if token.scope == None or \
                token.scope != None and token.scope.lower() == 'all':
             return token
@@ -469,7 +470,9 @@ def check(username, password):
     
 
 def anonymous():
-    if request.path_info in ('/oauth/token', '/who_am_i', '/avatar'):
+    urls = database.get_anonymous_urls()
+    urls.append('/oauth/token')
+    if request.path_info in urls:
         return 'anonymous'
     
 
