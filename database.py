@@ -15,7 +15,6 @@ PORT = 6000
 class DB(object):
     def __init__(self, server, port):
         self.storage = ClientStorage((server, port,))
-        #print dir(self.storage)
         self.db = ZDB(self.storage)
         self.connection = self.db.open()
         self.dbroot = self.connection.root()
@@ -63,35 +62,45 @@ def create_client(client_name,
                   client_secret,
                   redirect_uri,
                   client_type='confidential'):
-    db = DB(SERVER, PORT)
     client = Client( client_name,
                      client_id,
                      client_secret,
                      redirect_uri,
                      client_type)
-    db.dbroot[client_id] = client
-    transaction.commit()
-    db.close()
-    return client
+    try:
+        db = DB(SERVER, PORT)
+        db.dbroot[client_id] = client
+        transaction.commit()
+        
+        return client
+    except Exception, e:
+        logging.error('create_client: %s' %(str(e)))
+        transaction.abort()
+    finally:
+        db.close()
+        
+    return None
 
 
 
 
 def client_exists(client_id):
-    db = DB(SERVER, PORT)
     try:
+        db = DB(SERVER, PORT)
         if client_id in db.dbroot:
-            db.close()
             return True
-    except:
-        pass
+    except Exception, e:
+        logging.error('client_exists: %s' % (str(e)))
+    finally:
+        db.close()
+        
     return False
 
 
 
 def get_client(client_id):
-    db = DB(SERVER, PORT)
     try:
+        db = DB(SERVER, PORT)
         if client_id in db.dbroot:
             client = db.dbroot[client_id]
             
@@ -108,37 +117,34 @@ def get_client(client_id):
 
 
 def get_password(username):
-    db = DB(SERVER, PORT)
-    if username in db.dbroot:
-        try:
+    try:
+        db = DB(SERVER, PORT)
+        if username in db.dbroot:
             user = db.dbroot[username]
-            print user
             return user.password
-        except Exception, e:
-            logging.error('get_password(): %s' % (str(e)))
-        finally:
-            db.close()
+    except Exception, e:
+        logging.error('get_password(): %s' % (str(e)))
+    finally:
+        db.close()
 
     return None
 
 
 def get_user(uid=None):
-    db = DB(SERVER, PORT)
-    if uid is not None:
-        try:
+    try:
+        db = DB(SERVER, PORT)
+        if uid is not None:
             user = db.dbroot[uid]
-        
 
             return deepcopy(user)
-        finally:
-            db.close()
-    elif cherrypy.request.login in db.dbroot:
-        try:
+        elif cherrypy.request.login in db.dbroot:
             user = db.dbroot[cherrypy.request.login]
     
             return deepcopy(user)
-        finally:
-            db.close()
+    except Exception, e:
+        logging.error('get_user: %s' % (str(e)))
+    finally:
+        db.close()
 
     return None
 
@@ -154,22 +160,28 @@ def create_auth_code(client_id, scope=None):
         code = deepcopy(auth_code.code)
         db.close()
         return code
+    except Exception, e:
+        logging.error('create_auth_code %s' % (str(e)))
     finally:
         db.close()
+
+    return None
 
 
 
 def get_auth_code(client_id, client_secret, code):
-    db = DB(SERVER, PORT)
-    if code in db.dbroot:
-        auth_code = deepcopy(db.dbroot[code])
-        db.close()
-        
-        if auth_code.expire + auth_code.created > time() and \
-               auth_code.client.id == client_id and \
-               auth_code.client.secret == client_secret:
-            return auth_code
-    else:
+    try:
+        db = DB(SERVER, PORT)
+        if code in db.dbroot:
+            auth_code = deepcopy(db.dbroot[code])
+                
+            if auth_code.expire + auth_code.created > time() and \
+                   auth_code.client.id == client_id and \
+                   auth_code.client.secret == client_secret:
+                return auth_code
+    except Exception, e:
+        logging.error('get_auth_code: %s' % (str(e)))
+    finally:
         db.close()
 
 
@@ -178,8 +190,9 @@ def get_auth_code(client_id, client_secret, code):
 
 
 def create_access_token_from_code(auth_code):
-    db = DB(SERVER, PORT)
     try:
+        db = DB(SERVER, PORT)
+    
         client = db.dbroot[auth_code.client.id]
         user = db.dbroot[auth_code.user.id]
         token = AccessToken(client,
@@ -187,22 +200,23 @@ def create_access_token_from_code(auth_code):
                             scope=auth_code.scope)
         db.dbroot[token.code] = token
         transaction.commit()
-    except Exception, e:
-        print e
-        db.close()
-        return False
 
-    db.close()
+        return token.code
+    except Exception, e:
+        logging.error('create_access_token_from_code: %s' % (str(e)))
+    finally:
+        db.close()
     
-    return token.code
+    return False
 
 
 def create_implicit_grant_access_token(client_id, redirect_uri, scope=None):
-    db = DB(SERVER, PORT)
     try:
-        client = db.dbroot[client_id]
         user = get_user()
-        #the only authentication is to check the
+        db = DB(SERVER, PORT)
+        client = db.dbroot[client_id]
+        
+        #the only authentication here is to check the
         #redirect_uri is the same as the one stored
         #for the registered client
         if client.redirect_uri == redirect_uri:
@@ -211,19 +225,17 @@ def create_implicit_grant_access_token(client_id, redirect_uri, scope=None):
                                 scope=scope)
             db.dbroot[token.code] = token
             transaction.commit()
+            
+            return token.code
         else:
             logging.warn('%s uri of %s does not match %s' %
                          (client_id, client.redirect_uri, redirect_uri))
-            return False
     except Exception, e:
-        logging.error('client is %s, user is %s, %s' %
-                      (client, user, str(e)))
+        logging.error('%s' % (str(e)))
+    finally:
         db.close()
-        return False
-
-    db.close()
     
-    return token.code
+    return False
 
 
 
@@ -239,24 +251,27 @@ def create_access_token_from_user_pass(client_id,
         #create a client object from username and password
         client = Client(user_id, user_id, password, None)
         #make client_secret equal the password
+        #then I don't have to change anything below
         client_secret = password
     user = get_user(user_id)
-    
-    db = DB(SERVER, PORT)
-    if client != None and \
-           user != None and \
-           client.secret == client_secret and \
-           user.password == password:
-        token = AccessToken(client,
-                            user,
-                            scope=scope)
-        db.dbroot[token.code] = token
-        transaction.commit()
+    try:
+        db = DB(SERVER, PORT)
+        if client != None and \
+               user != None and \
+               client.secret == client_secret and \
+               user.password == password:
+            token = AccessToken(client,
+                                user,
+                                scope=scope)
+            db.dbroot[token.code] = token
+            transaction.commit()
+
+            return token.code
+    except Exception, e:
+        logging.error('create_access_token_from_user_pass: %s' %
+                      (str(e)))
+    finally:
         db.close()
-
-        return token.code
-
-    db.close()
 
     return False
 
@@ -264,28 +279,39 @@ def create_access_token_from_user_pass(client_id,
 
 def create_access_token_from_refresh_token(refresh_token):
     '''
-    We assume that in getting the refresh_token,
-    the authentication takes place there.
+    We assume that in the getting of the refresh_token,
+    before calling this function, the authentication takes place there.
     '''
-    refresh_token = deepcopy(refresh_token)
-    token = AccessToken(refresh_token.client,
-                        refresh_token.user,
-                        refresh_token.scope)
     try:
+        #disconnect the data reference from the data stored in the DB
+        refresh_token = deepcopy(refresh_token)
+
+        #use the info stored in the refresh_token copy to create a
+        #new AccessToken
+        token = AccessToken(refresh_token.client,
+                            refresh_token.user,
+                            refresh_token.scope)
+    
+        #delete old access_token and create a new access_token
+        #to replace the old one. refresh_token.access_token is
+        #the string code not an AccessToken object
         delete_token(refresh_token.access_token)
         db = DB(SERVER, PORT)
         db.dbroot[token.code] = token
         refresh_token.access_token = token
         refresh_token._p_changed = True
         transaction.commit()
+
+        #return access token string not AccessToken object
+        return token.code
     except Exception, e:
-        logging.error(str(e))
+        logging.error('create_access_token_from_refresh_token: %s' %
+                      str(e))
         transaction.abort()
-        return False
     finally:
         db.close()
 
-    return token.code
+    return False
 
 
 
@@ -299,14 +325,15 @@ def create_refresh_token_from_code(auth_code, access_token):
                              scope=auth_code.scope)
         db.dbroot[token.code] = token
         transaction.commit()
+        
+        return token.code
     except Exception, e:
-        logging.error(str(e))
+        logging.error('create_refresh_token_from_code %s' % (str(e)))
         transaction.abort()
-        return False
     finally:
         db.close()
 
-    return token.code
+    return False
 
 
 def create_refresh_token_from_user_pass(client_id,
@@ -342,12 +369,14 @@ def create_refresh_token_from_user_pass(client_id,
 
                 return token.code
             except Exception, e:
-                logging.error(str(e))
+                logging.error('create_refresh_token_from_user_pass: %s' %
+                              (str(e)))
                 transaction.abort()
             finally:
                 db.close()
     except Exception, e:
-        logging.error(str(e))
+        logging.error('create_refresh_token_from_user_pass: %s' %
+                      (str(e)))
     
 
     return False
@@ -371,9 +400,9 @@ def get_token(client_id, client_secret, code):
             
                 return token
             else:
-                logging.warn('Did not authenticate')
+                logging.warn('get_token: Did not authenticate')
         else:
-            logging.warn('code %s is not in database' % (code))
+            logging.warn('get_token: code %s is not in database' % (code))
     except Exception, e:
         logging.error('get_token(%s, %s %s): %s' %
                       (client_id, client_secret, code, str(e)))
@@ -395,10 +424,10 @@ def get_access_token(token_str):
                    token.expire + token.created > time():
                 return token
             else:
-                logging.warn('Token %s has expired for client %s and user %s' %
+                logging.warn('get_access_token: Token %s has expired for client %s and user %s' %
                              (token.code, token.client.id, token.user.id))
         else:
-            logging.warn('code %s is not in database' % (code))
+            logging.warn('get_access_token: token %s is not in database' % (token_str))
     except Exception, e:
         logging.error('get_access_token(%s): %s' %
                       (token_str, str(e)))
@@ -417,7 +446,7 @@ def delete_token(token):
             del db.dbroot[token]
         transaction.commit()
     except Exception, e:
-        logging.error(str(e))
+        logging.error('delete_token: %s' % (str(e)))
         transaction.abort()
     finally:
         db.close()
