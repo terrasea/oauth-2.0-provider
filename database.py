@@ -149,6 +149,39 @@ def get_user(uid=None):
     return None
 
 
+def add_user(uid, password, firstname=None, lastname=None):
+    user = User(uid, password, firstname, lastname)
+    db = DB(SERVER, PORT)
+    try:
+        if uid not in db.dbroot:
+            db.dbroot[uid] = user
+        else:
+            logging.warn('add_user: %s already exists' % (uid))
+            raise KeyError('User %s already exists' % (uid))
+    except Exception, e:
+        logging.error('add_user: %s' % (str(e)))
+
+        return None
+    finally:
+        db.close()
+
+        
+    return user
+
+
+
+
+def associate_client_with_user(user, client):
+    """
+    Adds client to list of authorised clients who can access the users resources on a long term basis
+    @TODO implement
+    """
+    raise NotImplementedError('Not implemented')
+
+
+
+
+
 def create_auth_code(client_id, scope=None):
     client = get_client(client_id)
     user = get_user()
