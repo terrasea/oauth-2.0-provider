@@ -202,21 +202,25 @@ def associate_client_with_user(user, client):
     db = DB(SERVER, PORT)
     try:
         key = ''.join(['client_association_', str(user.id)])
-        if key not in db.dbroot:
+        if key in db.dbroot:
             association = db.dbroot[key]
             if client.id not in association.clients:
-                association.clients[client.id] = client
+                association.clients[client.id] = deepcopy(client)
                 association._p_changed = True
             else:
-                raise AssociationExistsWarning(''.join(['Client ', str(client.id), ' is already associated with ', str(user.id)]))
+                raise AssociationExistsWarning(''.join(['Client ',
+                                                        str(client.id),
+                                                        ' is already associated with ',
+                                                        str(user.id)]))
         else:
-            association = Association(user)
-            association.clients[client.id] = client
+            association = Association(deepcopy(user))
+            association.clients[client.id] = deepcopy(client)
             db.dbroot[key] = association
             
         transaction.commit()
     except Exception, e:
         logging.error(''.join(['associate_client_with_user: ', str(e)]))
+        raise e
         transaction.abort()
     finally:
         db.close()
@@ -497,8 +501,14 @@ def get_token(client_id, client_secret, code):
         else:
             logging.warn(''.join(['get_token: code ', str(code), ' is not in database']))
     except Exception, e:
-        logging.error('get_token(%s, %s %s): %s' %
-                      (client_id, client_secret, code, str(e)))
+        logging.error(''.join(['get_token(',
+                               str(client_id),
+                               ',',
+                               str(client_secret),
+                               ',',
+                               str(code),
+                               '): ',
+                               str(e)]))
     finally:
         db.close()
 
@@ -517,13 +527,18 @@ def get_access_token(token_str):
                    token.expire + token.created > time():
                 return token
             else:
-                logging.warn('get_access_token: Token %s has expired for client %s and user %s' %
-                             (token.code, token.client.id, token.user.id))
+                logging.warn(''.join(['get_access_token: Token ',
+                                      str(token.code),
+                                      ' has expired for client ',
+                                      str(token.client.id),
+                                      ' and user ',
+                                      str(token.user.id)]))
         else:
-            logging.warn('get_access_token: token %s is not in database' % (token_str))
+            logging.warn(''.join(['get_access_token: token ',
+                                  str(token_str),
+                                  ' is not in database']))
     except Exception, e:
-        logging.error('get_access_token(%s): %s' %
-                      (token_str, str(e)))
+        logging.error(''.join(['get_access_token(', str(token_str), '): ', str(e)]))
     finally:
         db.close()
             
@@ -539,7 +554,7 @@ def delete_token(token):
             del db.dbroot[token]
         transaction.commit()
     except Exception, e:
-        logging.error('delete_token: %s' % (str(e)))
+        logging.error(''.join(['delete_token: ', str(e)]))
         transaction.abort()
     finally:
         db.close()
@@ -651,6 +666,67 @@ if __name__ == '__main__':
             
             user2 = get_user()
             self.assertEqual(user2.id, TestDBFunctions.user_id)
+
+
+
+
+        def test_add_user(self):
+            add_user(TestDBFunctions.user_id,
+                     TestDBFunctions.user_password,
+                     firstname='Jim',
+                     lastname='Hudson')
+
+            db = DB(SERVER, PORT)
+
+            try:
+                user = db.dbroot[TestDBFunctions.user_id]
+                self.assertEqual(TestDBFunctions.user_id, user.id)
+                self.assertEqual(TestDBFunctions.user_password, user.password)
+                self.assertEqual('Jim', user.firstname)
+                self.assertEqual('Hudson', user.lastname)
+            finally:
+                db.close()
+
+
+
+
+
+
+        def test_associate_client_with_user(self):
+            user = User(TestDBFunctions.user_id,
+                        TestDBFunctions.user_password)
+            client = Client(TestDBFunctions.client_name,
+                            TestDBFunctions.client_id,
+                            TestDBFunctions.client_secret,
+                            TestDBFunctions.redirect_uri,
+                            TestDBFunctions.client_type)
+
+            db = DB(SERVER, PORT)
+            db.dbroot[TestDBFunctions.user_id] = user
+            db.dbroot[TestDBFunctions.client_id] = client
+            before_length = len(db.dbroot)
+            transaction.commit()
+            db.close()
+
+            
+
+            associate_client_with_user(user, client)
+            key = ''.join(['client_association_', str(user.id)])
+            db = DB(SERVER, PORT)
+            
+            try:
+                after_length = len(db.dbroot)
+                self.assertNotEqual(before_length, after_length)
+                self.assertTrue(key in db.dbroot)
+                assoc = db.dbroot[key]
+                self.assertEqual(TestDBFunctions.user_id, assoc.user.id)
+                
+                self.assertTrue(TestDBFunctions.client_id in assoc.clients)
+                client2 = assoc.clients[TestDBFunctions.client_id]
+                self.assertEqual(TestDBFunctions.client_id, client2.id)
+            finally:
+                db.close()
+
 
 
         def test_create_auth_code(self):
