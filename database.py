@@ -1,6 +1,7 @@
 import cherrypy
 import logging
-from models import User, Client, \
+import array
+from models import Association, User, Client, \
      AuthCode, AccessToken, RefreshToken
 from ZEO.ClientStorage import ClientStorage
 from ZODB import DB as ZDB
@@ -8,8 +9,24 @@ import transaction
 from time import time
 from copy import deepcopy
 
+
+
 SERVER = 'localhost'
 PORT = 6000
+
+
+class UserExistsWarning(Warning):
+    pass
+
+
+class ClientExistsWarning(Warning):
+    pass
+
+
+class AssociationExistsWarning(Warning):
+    pass
+
+
 
 
 class DB(object):
@@ -39,7 +56,7 @@ def add_anonymous_url(url):
             db.dbroot['anonymous_urls'] = urls
         transaction.commit()
     except Exception, e:
-        logging.error('add_anonymous_url: %s' % (str(e)))
+        logging.error(''.join(['add_anonymous_url: ', str(e)]))
         transaction.abort()
     finally:
         db.close()
@@ -50,7 +67,7 @@ def get_anonymous_urls():
     try:
         return db.dbroot['anonymous_urls']
     except Exception, e:
-        logging.error('get_anonymous_urls: %s' % (str(e)))
+        logging.error(''.join(['get_anonymous_urls: ', str(e)]))
     finally:
         db.close()
 
@@ -69,12 +86,17 @@ def create_client(client_name,
                      client_type)
     db = DB(SERVER, PORT)
     try:
-        db.dbroot[client_id] = client
-        transaction.commit()
+        if client_id not in db.dbroot:
+            db.dbroot[client_id] = client
+            transaction.commit()
+            
+            return client
+        else:
+            raise ClientExistsWarning(''.join(['Client with id of ',str(client_id), ' already exists']))
         
-        return client
+        
     except Exception, e:
-        logging.error('create_client: %s' %(str(e)))
+        logging.error(''.join(['create_client: ', str(e)]))
         transaction.abort()
     finally:
         db.close()
@@ -90,7 +112,7 @@ def client_exists(client_id):
         if client_id in db.dbroot:
             return True
     except Exception, e:
-        logging.error('client_exists: %s' % (str(e)))
+        logging.warn(''.join(['client_exists: ', str(e)]))
     finally:
         db.close()
         
@@ -106,7 +128,7 @@ def get_client(client_id):
             
             return deepcopy(client)
     except Exception, e:
-        logging.error('get_client' + str(e))
+        logging.error(''.join(['get_client', str(e)]))
     finally:
         db.close()
     
@@ -123,7 +145,7 @@ def get_password(username):
             user = db.dbroot[username]
             return user.password
     except Exception, e:
-        logging.error('get_password(): %s' % (str(e)))
+        logging.error(''.join(['get_password(): ', str(e)]))
     finally:
         db.close()
 
@@ -142,7 +164,7 @@ def get_user(uid=None):
     
             return deepcopy(user)
     except Exception, e:
-        logging.error('get_user: %s' % (str(e)))
+        logging.error(''.join(['get_user: ', str(e)]))
     finally:
         db.close()
 
@@ -155,12 +177,14 @@ def add_user(uid, password, firstname=None, lastname=None):
     try:
         if uid not in db.dbroot:
             db.dbroot[uid] = user
+            transaction.commit()
         else:
-            logging.warn('add_user: %s already exists' % (uid))
-            raise KeyError('User %s already exists' % (uid))
+            logging.warn(''.join(['add_user: ', str(uid), ' already exists']))
+            raise UserExistsWarning(''.join(['User ', str(uid), ' already exists']))
     except Exception, e:
-        logging.error('add_user: %s' % (str(e)))
-
+        logging.error(''.join(['add_user: ', (str(e))]))
+        transaction.abort()
+        
         return None
     finally:
         db.close()
@@ -174,9 +198,28 @@ def add_user(uid, password, firstname=None, lastname=None):
 def associate_client_with_user(user, client):
     """
     Adds client to list of authorised clients who can access the users resources on a long term basis
-    @TODO implement
     """
-    raise NotImplementedError('Not implemented')
+    db = DB(SERVER, PORT)
+    try:
+        key = ''.join(['client_association_', str(user.id)])
+        if key not in db.dbroot:
+            association = db.dbroot[key]
+            if client.id not in association.clients:
+                association.clients[client.id] = client
+                association._p_changed = True
+            else:
+                raise AssociationExistsWarning(''.join(['Client ', str(client.id), ' is already associated with ', str(user.id)]))
+        else:
+            association = Association(user)
+            association.clients[client.id] = client
+            db.dbroot[key] = association
+            
+        transaction.commit()
+    except Exception, e:
+        logging.error(''.join(['associate_client_with_user: ', str(e)]))
+        transaction.abort()
+    finally:
+        db.close()
 
 
 
@@ -193,7 +236,8 @@ def create_auth_code(client_id, scope=None):
         code = deepcopy(auth_code.code)
         return code
     except Exception, e:
-        logging.error('create_auth_code %s' % (str(e)))
+        logging.error(''.join(['create_auth_code: ', str(e)]))
+        transaction.abort()
     finally:
         db.close()
 
@@ -212,7 +256,7 @@ def get_auth_code(client_id, client_secret, code):
                    auth_code.client.secret == client_secret:
                 return auth_code
     except Exception, e:
-        logging.error('get_auth_code: %s' % (str(e)))
+        logging.error(''.join(['get_auth_code: ', str(e)]))
     finally:
         db.close()
 
@@ -234,7 +278,8 @@ def create_access_token_from_code(auth_code):
 
         return token.code
     except Exception, e:
-        logging.error('create_access_token_from_code: %s' % (str(e)))
+        logging.error(''.join(['create_access_token_from_code: ', str(e)]))
+        transaction.abort()
     finally:
         db.close()
     
@@ -259,10 +304,15 @@ def create_implicit_grant_access_token(client_id, redirect_uri, scope=None):
             
             return token.code
         else:
-            logging.warn('%s uri of %s does not match %s' %
-                         (client_id, client.redirect_uri, redirect_uri))
+            logging.warn(''.join([str(client_id),
+                                  ' uri of ',
+                                  str(client.redirect_uri),
+                                  ' does not match ',
+                                  str(redirect_uri)]))
+            
     except Exception, e:
-        logging.error('%s' % (str(e)))
+        logging.error(''.join(['create_implicit_grant_access_token: ', str(e)]))
+        transaction.abort()
     finally:
         db.close()
     
@@ -282,10 +332,13 @@ def create_access_token_from_user_pass(client_id,
         #create a client object from username and password
         client = Client(user_id, user_id, password, None)
         #make client_secret equal the password
-        #then I don't have to change anything below
+        #saving me from having to change anything below
         client_secret = password
+        
     user = get_user(user_id)
+    
     db = DB(SERVER, PORT)
+    
     try:
         if client != None and \
                user != None and \
@@ -294,13 +347,18 @@ def create_access_token_from_user_pass(client_id,
             token = AccessToken(client,
                                 user,
                                 scope=scope)
+
+
             db.dbroot[token.code] = token
             transaction.commit()
 
+
+
             return token.code
     except Exception, e:
-        logging.error('create_access_token_from_user_pass: %s' %
-                      (str(e)))
+        logging.error(''.join(['create_access_token_from_user_pass: ', 
+                               str(e)]))
+        transaction.abort()
     finally:
         db.close()
 
@@ -326,7 +384,9 @@ def create_access_token_from_refresh_token(refresh_token):
     #to replace the old one. refresh_token.access_token is
     #the string code not an AccessToken object
     delete_token(refresh_token.access_token)
+    
     db = DB(SERVER, PORT)
+
     try:
         db.dbroot[token.code] = token
         refresh_token.access_token = token
@@ -336,8 +396,8 @@ def create_access_token_from_refresh_token(refresh_token):
         #return access token string not AccessToken object
         return token.code
     except Exception, e:
-        logging.error('create_access_token_from_refresh_token: %s' %
-                      str(e))
+        logging.error(''.join(['create_access_token_from_refresh_token: ',
+                               str(e)]))
         transaction.abort()
     finally:
         db.close()
@@ -348,6 +408,7 @@ def create_access_token_from_refresh_token(refresh_token):
 
 def create_refresh_token_from_code(auth_code, access_token):
     db = DB(SERVER, PORT)
+    
     try:
         auth_code = deepcopy(auth_code)
         token = RefreshToken(access_token,
@@ -359,7 +420,7 @@ def create_refresh_token_from_code(auth_code, access_token):
         
         return token.code
     except Exception, e:
-        logging.error('create_refresh_token_from_code %s' % (str(e)))
+        logging.error(''.join(['create_refresh_token_from_code ', str(e)]))
         transaction.abort()
     finally:
         db.close()
@@ -396,18 +457,19 @@ def create_refresh_token_from_user_pass(client_id,
                                      user,
                                      scope=scope)
                 db.dbroot[token.code] = token
+                
                 transaction.commit()
 
                 return token.code
             except Exception, e:
-                logging.error('create_refresh_token_from_user_pass: %s' %
-                              (str(e)))
+                logging.error(''.join(['create_refresh_token_from_user_pass: ',
+                                       str(e)]))
                 transaction.abort()
             finally:
                 db.close()
     except Exception, e:
-        logging.error('create_refresh_token_from_user_pass: %s' %
-                      (str(e)))
+        logging.error(''.join(['create_refresh_token_from_user_pass: ',
+                               str(e)]))
     
 
     return False
@@ -433,7 +495,7 @@ def get_token(client_id, client_secret, code):
             else:
                 logging.warn('get_token: Did not authenticate')
         else:
-            logging.warn('get_token: code %s is not in database' % (code))
+            logging.warn(''.join(['get_token: code ', str(code), ' is not in database']))
     except Exception, e:
         logging.error('get_token(%s, %s %s): %s' %
                       (client_id, client_secret, code, str(e)))

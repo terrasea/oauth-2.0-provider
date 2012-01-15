@@ -7,7 +7,28 @@ from persistent import Persistent
 from time import time
 from uuid import uuid4
 
-    
+
+
+class Association(Persistent):
+    """
+    Holds a list of clients that a user allows to access their resources.
+    """
+
+    def __init__(self,
+                 user):
+        self._user = user
+        self._clients = dict()
+
+
+    @property
+    def clients(self):
+        return self._clients
+
+
+    @property
+    def user(self):
+        return self._user
+
 
 class Client(Persistent):
     """
