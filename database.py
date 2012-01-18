@@ -27,6 +27,9 @@ class AssociationExistsWarning(Warning):
     pass
 
 
+class ConfidentailError(Error):
+    pass
+
 
 
 class DB(object):
@@ -199,6 +202,14 @@ def associate_client_with_user(user, client):
     """
     Adds client to list of authorised clients who can access the users resources on a long term basis
     """
+
+    #before going further, see if client is confidential or not.  If confidential then it is assumed to be able to keep the username and password secret from itself.  If this is the case then it's allowed to continue, else throw a ConfindentialError.
+    if client.type.lower() != 'confidential':
+        raise ConfidentailError('Client ' + client.id + \
+                                ' is not a confidentail client')
+    
+
+    
     db = DB(SERVER, PORT)
     try:
         key = ''.join(['client_association_', str(user.id)])

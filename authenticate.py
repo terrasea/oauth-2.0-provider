@@ -15,14 +15,27 @@ import models
 from user_resource_grant import user_resource_grant
 
 
-class Provider(object):
+##Am not sure where to put the associate clients with users code calls.
+##
+##
 
+class Provider(object):
+    """
+    Authorises clients to access user resources and provides authorisation codes as well as access and refresh tokens.
+    """
     def __init__(self, scope=tuple()):
         self._available_scope = scope
     
     @expose
     def index(self, code=None, error=None):
         return "Hello World!"
+
+
+    @expose
+    def manage(self):
+        pass
+
+
     
     @expose
     def auth(self,
@@ -224,7 +237,11 @@ class Provider(object):
 
             raise HTTPRedirect(response_str.getvalue())
 
-        return "<html><head><title>A problem occured</title></head><body><div>Aproblem occured</div></body></html>"
+
+        #if both allow and deny are
+        #None or False then will fall through to here
+        return "<html><head><title>A problem occured" + \
+               "</title></head><body><div>Aproblem occured</div></body></html>"
 
 
     @expose
