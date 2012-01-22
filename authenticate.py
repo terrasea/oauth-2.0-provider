@@ -198,6 +198,7 @@ class Provider(object):
                     scope)
 
                 if not auth_token_str:
+                    ##Error not authorised
                     error_str = StringIO()
 
                     error_str.write(redirect_uri)
@@ -216,6 +217,10 @@ class Provider(object):
 
                     raise HTTPRedirect(error_str.getvalue())
 
+
+                ## the client is probably a javascript client which
+                ## can't be trusted for more than one session. Thus
+                ## the client does not get a refresh token in this flow
                 auth_token = database.get_access_token(auth_token_str)
                 response_list.append(('access_token', auth_token.code))
                 response_list.append(('expires_in', auth_token.expire))
@@ -224,11 +229,16 @@ class Provider(object):
                     response_list.append(('scope', scope))
 
             else:
+                ## This is the normal 2 headed snake authentication.
+                ## The client is sent back an authorisation code,
+                ## which it uses to gain an access token later.
                 auth_code_str = database.create_auth_code(client_id, scope)
 
                 response_list.append(('code', auth_code_str))
 
             if state:
+                ## State is optional, but if present must be returned
+                ## back to the client.
                 response_list.append(['state', state])
 
 
@@ -277,7 +287,7 @@ class Provider(object):
                                                password,
                                                scope)
         elif 'client_credentials' == grant_type:
-            pass
+            return {'error' : 'invalid_grant' }
         elif 'assertion' == grant_type:
             return self.process_assertion_grant(client_id,
                                                 client_secret,
@@ -292,10 +302,7 @@ class Provider(object):
             return {'error' : 'invalid_grant' }
         else:
             #the grant_type specified is not a valid one
-
-            error_dict = dict([('error', 'invalid_grant')])
-
-            return error_dict
+            return return {'error' : 'invalid_grant' }
 
 
     def process_auth_code_grant(self,
@@ -306,17 +313,20 @@ class Provider(object):
                                 redirect_uri):
         client = database.get_client(client_id)
 
-        print 'process_auth_code_grant redirect_uri', redirect_uri
         auth_code = database.get_auth_code(client_id,
                                            client_secret,
                                            code)
-        print 'process_auth_code_grant', redirect_uri, client.redirect_uri
+
         if auth_code is not None and \
                client is not None and \
                redirect_uri == client.redirect_uri:
+
             access_token = database.create_access_token_from_code(auth_code)
-            refresh_token = database.create_refresh_token_from_code(auth_code,
-                                                           access_token)
+
+            refresh_token = database.create_refresh_token_from_code(
+                auth_code,
+                access_token)
+            
             if not access_token:
                 return  { 'error' : 'access_denied' }
 
@@ -332,6 +342,12 @@ class Provider(object):
 
             if scope:
                 tokens.update({'scope'         : scope})
+
+            database.associate_client_with_user(auth_code.user,
+                                                auth_code.client,
+                                                refresh_token)
+
+            database.delete_auth_code(code)
 
             return tokens
 
@@ -386,6 +402,10 @@ class Provider(object):
                 }
             if scope:
                 tokens.update({'scope'         : scope})
+
+                database.associate_client_with_user(refresh_token.user,
+                                                    refresh_token.client,
+                                                    refresh_token)
 
             return tokens
 

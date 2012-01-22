@@ -197,26 +197,42 @@ def add_user(uid, password, firstname=None, lastname=None):
 
 
 
+def delete_user(user):
+    pass
 
-def associate_client_with_user(user, client):
+
+
+def associate_client_with_user(user, client, refresh_token_str):
     """
     Adds client to list of authorised clients who can access the users resources on a long term basis
     """
 
-    #before going further, see if client is confidential or not.  If confidential then it is assumed to be able to keep the username and password secret from itself.  If this is the case then it's allowed to continue, else throw a ConfindentialError.
-    if client.type.lower() != 'confidential':
-        raise ConfidentailError('Client ' + client.id + \
+    ## before going further, see if client is confidential or not.
+    ## If confidential then it is assumed to be able to keep the
+    ## username and password secret from itself.  If this is the
+    ## case then it's allowed to continue, else throw a
+    ## ConfindentialError.
+    if refresh_token.client.type.lower() != 'confidential':
+        client_id = refresh_token.client.id
+        raise ConfidentailError('Client ' + client_id + \
                                 ' is not a confidentail client')
     
 
     
     db = DB(SERVER, PORT)
     try:
-        key = ''.join(['client_association_', str(user.id)])
+        key = 'client_association_' + str(user.id)
         if key in db.dbroot:
             association = db.dbroot[key]
             if client.id not in association.clients:
-                association.clients[client.id] = deepcopy(client)
+                # get the refresh token which contains the client,
+                # user and access token, as well as the
+                # refresh_token code. This allows us to delete the
+                # access token and the refresh_token stopping the
+                # client from accessing the users resources.
+                association.clients[client.id] = get_token(client.id
+                                                           client.secret,
+                                                           refresh_token_str)
                 association._p_changed = True
             else:
                 raise AssociationExistsWarning(''.join(['Client ',
@@ -225,7 +241,9 @@ def associate_client_with_user(user, client):
                                                         str(user.id)]))
         else:
             association = Association(deepcopy(user))
-            association.clients[client.id] = deepcopy(client)
+            association.clients[client.id] = get_token(client.id
+                                                       client.secret,
+                                                       refresh_token_str)
             db.dbroot[key] = association
             
         transaction.commit()
@@ -237,6 +255,20 @@ def associate_client_with_user(user, client):
         db.close()
 
 
+
+
+def get_associations(user):
+    db = DB(SERVER, PORT)
+    try:
+        key = 'client_association_' + str(user.id)
+        if key in db.dbroot:
+            return deepcopy(db.dbroot[key])
+    except Exception, e:
+        logging.error('get_associations: ' + str(e))
+    finally:
+        db.close()
+
+    return False
 
 
 
@@ -257,6 +289,25 @@ def create_auth_code(client_id, scope=None):
         db.close()
 
     return None
+
+
+
+def delete_auth_code(code):
+    db = DB(SERVER, PORT)
+    try:
+        if code in db.dbroot:
+            del db.dbroot[code]
+            transaction.commit()
+    except Exception, e:
+        logging.error('delete_auth_code: ' + str(e))
+        tranaction.abort()
+
+        return False
+    finally:
+        db.close()
+
+    return True
+    
 
 
 
@@ -387,18 +438,18 @@ def create_access_token_from_refresh_token(refresh_token):
     before calling this function, the authentication takes place there.
     '''
     #disconnect the data reference from the data stored in the DB
-    refresh_token = deepcopy(refresh_token)
+    refresh_token_copy = deepcopy(refresh_token)
 
     #use the info stored in the refresh_token copy to create a
     #new AccessToken
-    token = AccessToken(refresh_token.client,
-                        refresh_token.user,
-                        refresh_token.scope)
+    token = AccessToken(refresh_token_copy.client,
+                        refresh_token_copy.user,
+                        refresh_token_copy.scope)
     
     #delete old access_token and create a new access_token
     #to replace the old one. refresh_token.access_token is
     #the string code not an AccessToken object
-    delete_token(refresh_token.access_token)
+    delete_token(refresh_token_copy.access_token)
     
     db = DB(SERVER, PORT)
 
@@ -565,7 +616,7 @@ def delete_token(token):
             del db.dbroot[token]
         transaction.commit()
     except Exception, e:
-        logging.error(''.join(['delete_token: ', str(e)]))
+        logging.error('delete_token: ' + str(e))
         transaction.abort()
     finally:
         db.close()
