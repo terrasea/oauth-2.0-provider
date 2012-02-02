@@ -8,27 +8,13 @@ from ZODB import DB as ZDB
 import transaction
 from time import time
 from copy import deepcopy
+from errors import *
 
-
+#from client import get_client
 
 SERVER = 'localhost'
 PORT = 6000
 
-
-class UserExistsWarning(Warning):
-    pass
-
-
-class ClientExistsWarning(Warning):
-    pass
-
-
-class AssociationExistsWarning(Warning):
-    pass
-
-
-class ConfidentailError(Error):
-    pass
 
 
 
@@ -44,98 +30,6 @@ class DB(object):
         self.db.close()
         self.storage.close()
 
-
-
-def add_anonymous_url(url):
-    db = DB(SERVER, PORT)
-    try:
-        if 'anonymous_urls' in db.dbroot:
-            urls = db.dbroot['anonymous_urls']
-            urls.append(url)
-            db.dbroot['anonymous_urls'] = urls
-        else:
-            urls = list()
-            urls.append(url)
-            db.dbroot['anonymous_urls'] = urls
-        transaction.commit()
-    except Exception, e:
-        logging.error(''.join(['add_anonymous_url: ', str(e)]))
-        transaction.abort()
-    finally:
-        db.close()
-        
-
-def get_anonymous_urls():
-    db = DB(SERVER, PORT)
-    try:
-        return db.dbroot['anonymous_urls']
-    except Exception, e:
-        logging.error(''.join(['get_anonymous_urls: ', str(e)]))
-    finally:
-        db.close()
-
-    return None
-
-
-def create_client(client_name,
-                  client_id,
-                  client_secret,
-                  redirect_uri,
-                  client_type='confidential'):
-    client = Client( client_name,
-                     client_id,
-                     client_secret,
-                     redirect_uri,
-                     client_type)
-    db = DB(SERVER, PORT)
-    try:
-        if client_id not in db.dbroot:
-            db.dbroot[client_id] = client
-            transaction.commit()
-            
-            return client
-        else:
-            raise ClientExistsWarning(''.join(['Client with id of ',str(client_id), ' already exists']))
-        
-        
-    except Exception, e:
-        logging.error(''.join(['create_client: ', str(e)]))
-        transaction.abort()
-    finally:
-        db.close()
-        
-    return None
-
-
-
-
-def client_exists(client_id):
-    db = DB(SERVER, PORT)
-    try:
-        if client_id in db.dbroot:
-            return True
-    except Exception, e:
-        logging.warn(''.join(['client_exists: ', str(e)]))
-    finally:
-        db.close()
-        
-    return False
-
-
-
-def get_client(client_id):
-    db = DB(SERVER, PORT)
-    try:
-        if client_id in db.dbroot:
-            client = db.dbroot[client_id]
-            
-            return deepcopy(client)
-    except Exception, e:
-        logging.error(''.join(['get_client', str(e)]))
-    finally:
-        db.close()
-    
-    return None
 
 
     
@@ -230,7 +124,7 @@ def associate_client_with_user(user, client, refresh_token_str):
                 # refresh_token code. This allows us to delete the
                 # access token and the refresh_token stopping the
                 # client from accessing the users resources.
-                association.clients[client.id] = get_token(client.id
+                association.clients[client.id] = get_token(client.id,
                                                            client.secret,
                                                            refresh_token_str)
                 association._p_changed = True
@@ -241,7 +135,7 @@ def associate_client_with_user(user, client, refresh_token_str):
                                                         str(user.id)]))
         else:
             association = Association(deepcopy(user))
-            association.clients[client.id] = get_token(client.id
+            association.clients[client.id] = get_token(client.id,
                                                        client.secret,
                                                        refresh_token_str)
             db.dbroot[key] = association
@@ -445,7 +339,8 @@ def create_access_token_from_refresh_token(refresh_token):
     token = AccessToken(refresh_token_copy.client,
                         refresh_token_copy.user,
                         refresh_token_copy.scope)
-    
+    if token == None:
+        return False
     #delete old access_token and create a new access_token
     #to replace the old one. refresh_token.access_token is
     #the string code not an AccessToken object
@@ -623,7 +518,7 @@ def delete_token(token):
     
 
 
-if __name__ == '__main__':
+if __name__ == '__main__j':
     from mock import patch
     from unittest import TestCase, main
     from ZODB.FileStorage import FileStorage
