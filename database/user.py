@@ -2,7 +2,7 @@ from DB import DB, SERVER, PORT
 from models import User
 import transaction
 import logging
-import cherrypy
+
 from copy import deepcopy
 
 def get_password(uid):
