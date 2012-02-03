@@ -1,13 +1,14 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 from client import get_client
 from user import get_user
 from models import AccessToken
 
 from copy import deepcopy
 import transaction
-
+import logging
 
 def create_access_token_from_code(auth_code):
+    logging.warn(str(auth_code))
     client = get_client(auth_code.client.id)
     user = get_user(auth_code.user.id)
 

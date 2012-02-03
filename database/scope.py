@@ -1,4 +1,4 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 import transaction
 
 def add_anonymous_url(url):

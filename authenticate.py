@@ -9,8 +9,15 @@ from cStringIO import StringIO
 from urllib import urlencode
 import logging
 
-import database
-import models
+import database.client
+import database.user
+import database.models
+import database.scope
+import database.authcode
+import database.accesstoken
+import database.refreshtoken
+import database.tokens
+import database.associations
 
 from user_resource_grant import user_resource_grant
 
@@ -60,7 +67,7 @@ class Provider(object):
             raise HTTPRedirect(error_str.getvalue())
 
 
-        if not database.client_exists(client_id):
+        if not database.client.client_exists(client_id):
             
             #client is not found in db
             error_str = StringIO()
@@ -94,7 +101,7 @@ class Provider(object):
 
 
 
-        client = database.get_client(client_id)
+        client = database.client.get_client(client_id)
         if client.redirect_uri != redirect_uri:
             #does not match one stored in DB for client
             error_str = StringIO()
@@ -106,8 +113,8 @@ class Provider(object):
             error_str.write(urlencode(error_list))
             raise HTTPRedirect(error_str.getvalue())
 
-
-        user = database.get_user()
+        uid = request.login
+        user = database.user.get_user(uid)
         if user == None:
             #for some reason the user logged in is not in DB
             error_str = StringIO()
@@ -192,7 +199,8 @@ class Provider(object):
 
             response_list = list()
             if token:
-                auth_token_str = database.create_implicit_grant_access_token(
+                auth_token_str = \
+                               database.accesstoken.create_implicit_grant_access_token(
                     client_id,
                     redirect_uri,
                     scope)
@@ -221,7 +229,7 @@ class Provider(object):
                 ## the client is probably a javascript client which
                 ## can't be trusted for more than one session. Thus
                 ## the client does not get a refresh token in this flow
-                auth_token = database.get_access_token(auth_token_str)
+                auth_token = database.accesstoken.get_access_token(auth_token_str)
                 response_list.append(('access_token', auth_token.code))
                 response_list.append(('expires_in', auth_token.expire))
                 response_list.append(('token_type', 'bearer'))
@@ -232,7 +240,9 @@ class Provider(object):
                 ## This is the normal 2 headed snake authentication.
                 ## The client is sent back an authorisation code,
                 ## which it uses to gain an access token later.
-                auth_code_str = database.create_auth_code(client_id, scope)
+                uid = request.login
+                logging.warn('uid is ' + str(uid))
+                auth_code_str = database.authcode.create_auth_code(client_id, uid, scope)
 
                 response_list.append(('code', auth_code_str))
 
@@ -302,7 +312,7 @@ class Provider(object):
             return {'error' : 'invalid_grant' }
         else:
             #the grant_type specified is not a valid one
-            return return {'error' : 'invalid_grant' }
+            return {'error' : 'invalid_grant' }
 
 
     def process_auth_code_grant(self,
@@ -311,43 +321,44 @@ class Provider(object):
                                 scope,
                                 code,
                                 redirect_uri):
-        client = database.get_client(client_id)
+        logging.warn('client_id: ' + str(client_id) + ' client_secret: ' + str(client_secret) + ' code: ' + str(code))
+        client = database.client.get_client(client_id)
 
-        auth_code = database.get_auth_code(client_id,
-                                           client_secret,
-                                           code)
+        auth_code = database.authcode.get_auth_code(client_id,
+                                                    client_secret,
+                                                    code)
 
-        if auth_code is not None and \
-               client is not None and \
+        if auth_code and \
+               client and \
                redirect_uri == client.redirect_uri:
 
-            access_token = database.create_access_token_from_code(auth_code)
+            access_token_str = database.accesstoken.create_access_token_from_code(auth_code)
 
-            refresh_token = database.create_refresh_token_from_code(
+            refresh_token_str = database.refreshtoken.create_refresh_token_from_code(
                 auth_code,
-                access_token)
+                access_token_str)
             
-            if not access_token:
+            if not access_token_str:
                 return  { 'error' : 'access_denied' }
 
 
             tokens = {
-                'access_token'  : access_token,
+                'access_token'  : access_token_str,
                 'token_type'    : 'bearer',
-                'expires_in'    : database.get_token(client_id,
-                                                     client_secret,
-                                                     access_token).expire,
-                'refresh_token' : refresh_token,
+                'expires_in'    : database.tokens.get_token(client_id,
+                                                           client_secret,
+                                                           access_token_str).expire,
+                'refresh_token' : refresh_token_str,
                 }
 
             if scope:
                 tokens.update({'scope'         : scope})
 
-            database.associate_client_with_user(auth_code.user,
-                                                auth_code.client,
-                                                refresh_token)
+            database.associations.associate_client_with_user(auth_code.user,
+                                                             auth_code.client,
+                                                             refresh_token_str)
 
-            database.delete_auth_code(code)
+            database.authcode.delete_auth_code(code)
 
             return tokens
 
@@ -363,13 +374,13 @@ class Provider(object):
                                username,
                                password,
                                scope):
-        access_token = database.create_access_token_from_user_pass(
+        access_token = database.accesstoken.create_access_token_from_user_pass(
             client_id,
             client_secret,
             username,
             password,
             scope)
-        refresh_token = database.create_refresh_token_from_user_pass(
+        refresh_token = database.refreshtoken.create_refresh_token_from_user_pass(
             client_id,
             client_secret,
             username,
@@ -380,19 +391,19 @@ class Provider(object):
                refresh_token is not None:
             #turn it into a AccessToken instance & RefreshToken instance
             if client_id != None:
-                access_token = database.get_token(client_id,
-                                                  client_secret,
-                                                  access_token)
-                refresh_token = database.get_token(client_id,
-                                                   client_secret,
-                                                   refresh_token)
+                access_token = database.token.get_token(client_id,
+                                                        client_secret,
+                                                        access_token)
+                refresh_token = database.token.get_token(client_id,
+                                                         client_secret,
+                                                         refresh_token)
             else:
-                access_token = database.get_token(username,
-                                                  password,
-                                                  access_token)
-                refresh_token = database.get_token(username,
-                                                   password,
-                                                   refresh_token)
+                access_token = database.token.get_token(username,
+                                                        password,
+                                                        access_token)
+                refresh_token = database.token.get_token(username,
+                                                         password,
+                                                         refresh_token)
             logging.warn('access_token %s'% (access_token))
             tokens = {
                 'access_token'  : access_token.code,
@@ -403,9 +414,9 @@ class Provider(object):
             if scope:
                 tokens.update({'scope'         : scope})
 
-                database.associate_client_with_user(refresh_token.user,
-                                                    refresh_token.client,
-                                                    refresh_token)
+                database.associations.associate_client_with_user(refresh_token.user,
+                                                                 refresh_token.client,
+                                                                 refresh_token)
 
             return tokens
 
@@ -433,17 +444,17 @@ class Provider(object):
                                     refresh_token):
 
         print 'refresh_token'
-        token = database.get_token(client_id,
-                                   client_secret,
-                                   refresh_token)
-        if not isinstance(token, models.RefreshToken):
+        token = database.token.get_token(client_id,
+                                         client_secret,
+                                         refresh_token)
+        if not isinstance(token, database.models.RefreshToken):
             return { 'error' : 'invalid_grant' }
 
         access_token = token.access_token
         delete_token(access_token)
         del access_token
 
-        new_access_token = database.get_token(
+        new_access_token = database.token.get_token(
             client_id,
             client_secret,
             create_access_token_from_refresh_token(token))
@@ -480,11 +491,11 @@ def access_resource_authorised(token_str):
     
     @returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
     '''
-    token = database.get_access_token(token_str)
+    token = database.accesstoken.get_access_token(token_str)
     expired = available_scope = scope_list = True
 
     #if token is not false or none checks to see if it is a AccessToken or not
-    if token and isinstance(token, models.AccessToken):
+    if token and isinstance(token, database.models.AccessToken):
         if token.scope == None or \
                token.scope != None and token.scope.lower() == 'all':
             return token
@@ -502,13 +513,13 @@ def access_resource_authorised(token_str):
 
 
 def check(username, password):
-    if database.get_password(username) != password:
+    if database.user.get_password(username) != password:
         return u'Authentication failed'
     
 
 def anonymous():
-    urls = database.get_anonymous_urls()
-    urls.append('/oauth/token')
+    urls = database.scope.get_anonymous_urls()
+    urls.add('/oauth/token')
     if request.path_info in urls:
         return 'anonymous'
     
@@ -536,7 +547,7 @@ config.update({
 @tools.response_headers(headers = [('Content-Type', 'image/svg')])
 def avatar(access_token=None):
     token = access_resource_authorised(access_token)
-    if isinstance(token, models.AccessToken):
+    if isinstance(token, database.models.AccessToken):
         user = token.user
         
         try:
@@ -553,7 +564,7 @@ def avatar(access_token=None):
 @tools.json_out()
 def who_am_i(access_token=None):
     token = access_resource_authorised(access_token)
-    if isinstance(token, models.AccessToken):
+    if isinstance(token, database.models.AccessToken):
         user = token.user
         return {'id'        : user.id,
                 'firstname' : user.firstname,
@@ -580,11 +591,12 @@ if __name__ == '__main__':
             elif code != None:
                 data = {'grant_type': 'authorization_code',
                         'client_id': 'o9999o',
-                        'client_secret': 'id',
+                        'client_secret': 'secret',
                         'code': code,
                         'redirect_uri': 'http://localhost:8080',}
                 request = Request('http://localhost:8080/oauth/token',
                                   urlencode(data))
+                logging.info(str(request))
                 response = urlopen(request)
                 message = response.read()
                 return "<html><head><title>Index</title></head><body><div>This is the index where the code is %s</div><div>%s</div></body></html>" % (code, message)
@@ -593,7 +605,6 @@ if __name__ == '__main__':
     index = Root()
 
     index.oauth = Provider()
-
 
     index.who_am_i = who_am_i
     index.avatar = avatar

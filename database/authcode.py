@@ -1,7 +1,13 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 from user import get_user
 from client import get_client
 from models import AuthCode
+
+
+import transaction
+import logging
+from copy import deepcopy
+from time import time
 
 def create_auth_code(client_id, uid, scope=None):
     client = get_client(client_id)
@@ -12,11 +18,13 @@ def create_auth_code(client_id, uid, scope=None):
         db.dbroot[auth_code.code] = auth_code
         transaction.commit()
         code = deepcopy(auth_code.code)
+        logging.warn('create_auth_code: ' + str(code))
         return code
     except Exception, e:
         logging.error(''.join(['create_auth_code: ', str(e)]))
         transaction.abort()
     finally:
+        #transaction.commit()
         db.close()
 
     return None

@@ -23,3 +23,12 @@
 /database/errors.pyc
 /database/user.pyc
 /database/client.pyc
+/database/__init__.pyc
+/database/accesstoken.pyc
+/database/associations.pyc
+/database/authcode.pyc
+/database/models.pyc
+/database/refreshtoken.pyc
+/database/scope.pyc
+/database/tokens.pyc
+/errors.txt

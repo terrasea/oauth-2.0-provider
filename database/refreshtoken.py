@@ -1,6 +1,7 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 from models import RefreshToken
 from client import get_client
+from tokens import delete_token
 
 import transaction
 from copy import deepcopy

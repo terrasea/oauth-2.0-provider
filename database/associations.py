@@ -1,12 +1,17 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 from errors import *
 from models import Association
+from tokens import get_token
+
+import logging
+import transaction
+from copy import deepcopy
 
 def associate_client_with_user(user, client, refresh_token_str):
     """
     Adds client to list of authorised clients who can access the users resources on a long term basis
     """
-
+    refresh_token = get_token(client.id, client.secret, refresh_token_str)
     ## before going further, see if client is confidential or not.
     ## If confidential then it is assumed to be able to keep the
     ## username and password secret from itself.  If this is the

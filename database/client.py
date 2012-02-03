@@ -1,4 +1,4 @@
-from DB import DB, SERVER, PORT
+from DB import ZODB as DB, SERVER, PORT
 from models import Client
 from errors import ClientExistsWarning
 import transaction
