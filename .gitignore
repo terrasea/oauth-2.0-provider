@@ -19,3 +19,5 @@
 /greens.fs.index
 /greens.fs.lock
 /greens.fs.tmp
+/database/DB.pyc
+/database/errors.pyc
