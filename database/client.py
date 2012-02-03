@@ -66,11 +66,34 @@ def get_client(client_id):
     return None
 
 
+
+
+def delete_client(client_id):
+    db = DB(SERVER, PORT)
+    try:
+        if client_id in db.dbroot:
+            del db.dbroot[client_id]
+            transaction.commit()
+            
+            return True
+        else:
+            logging.info('remove_client: client of ' + \
+                         str(client_id) + ' does not exist')
+    except Exception, e:
+        transaction.abort()
+        logging.error('remove_client: ' + str(e))
+    finally:
+        db.close()
+
+    return False
+
+
 if __name__ == '__main__':
     client = create_client('bob',
                            'bobby',
                            'iamcool',
                            'http://whaever.com')
-    print client
+    print client.id
     print client_exists('bobby')
     print get_client('bobby')
+    print delete_client('bobby')

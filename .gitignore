@@ -21,3 +21,5 @@
 /greens.fs.tmp
 /database/DB.pyc
 /database/errors.pyc
+/database/user.pyc
+/database/client.pyc
