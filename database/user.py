@@ -2,14 +2,15 @@ from DB import ZODB as DB, SERVER, PORT
 from models import User
 import transaction
 import logging
+from errors import *
 
 from copy import deepcopy
 
 def get_password(uid):
     db = DB(SERVER, PORT)
     try:
-        if uid in db.dbroot:
-            user = db.dbroot[uid]
+        if db.contains(uid):
+            user = db.get(uid)
             return user.password
         else:
             logging.warn('get_password: user of uid ' + str(uid) + \
@@ -25,7 +26,7 @@ def get_password(uid):
 def get_user(uid):
     db = DB(SERVER, PORT)
     try:
-        if uid in db.dbroot:
+        if db.contains(uid):
             user = db.dbroot[uid]
 
             return deepcopy(user)
@@ -48,15 +49,16 @@ def add_user(uid, password, firstname=None, lastname=None):
     user = User(uid, password, firstname, lastname)
     db = DB(SERVER, PORT)
     try:
-        if uid not in db.dbroot:
-            db.dbroot[uid] = user
-            transaction.commit()
+        #if it doesn't exist add it else report it does
+        if not db.contains(uid):
+            db.put(uid, user)
+            db.commit()
         else:
             logging.warn(''.join(['add_user: ', str(uid), ' already exists']))
             raise UserExistsWarning(''.join(['User ', str(uid), ' already exists']))
     except Exception, e:
         logging.error(''.join(['add_user: ', (str(e))]))
-        transaction.abort()
+        db.abort()
         
         return None
     finally:
@@ -70,9 +72,9 @@ def add_user(uid, password, firstname=None, lastname=None):
 def delete_user(uid):
     db = DB(SERVER, PORT)
     try:
-        if uid in db.dbroot:
-            del db.dbroot[uid]
-            transaction.commit()
+        if db.contains(uid):
+            db.delete(uid)
+            db.commit()
             return True
         else:
             logging.warn('delete_user: user of uid ' + str(uid) + \
@@ -80,12 +82,14 @@ def delete_user(uid):
     except Exception, e:
         logging.error('Error deleting user with uid ' + str(uid) + \
                       ': ' + str(e))
+        db.abort()
     finally:
         db.close()
 
     return False
 
 if __name__ == '__main__':
+    #delete_user('jim')
     add_user('jim', 'password')
     add_user(None, None)
     user = get_user(None)

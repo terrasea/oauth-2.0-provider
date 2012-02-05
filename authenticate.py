@@ -283,6 +283,7 @@ class Provider(object):
         returns a json string containing the
         access token and/or refresh token.
         '''
+        logging.warn('grant_type is ' + str(grant_type))
 
         if 'authorization_code' == grant_type:
             return self.process_auth_code_grant(client_id,
@@ -354,11 +355,22 @@ class Provider(object):
             if scope:
                 tokens.update({'scope'         : scope})
 
-            database.associations.associate_client_with_user(auth_code.user,
+            try:
+                if not database.associations.isassociated(auth_code.user,
+                                                          auth_code.client,
+                                                          refresh_token_str):
+                    database.associations.associate_client_with_user(auth_code.user,
+                                                                     auth_code.client,
+                                                                     refresh_token_str)
+                else:
+                    database.associations.update_association(auth_code.user,
                                                              auth_code.client,
                                                              refresh_token_str)
 
-            database.authcode.delete_auth_code(code)
+            except AssociationExistsWarning, e:
+                logging.warning('process_auth_code_grant: ' + str(e))
+            finally:
+                database.authcode.delete_auth_code(code)
 
             return tokens
 
@@ -391,17 +403,17 @@ class Provider(object):
                refresh_token is not None:
             #turn it into a AccessToken instance & RefreshToken instance
             if client_id != None:
-                access_token = database.token.get_token(client_id,
+                access_token = database.tokens.get_token(client_id,
                                                         client_secret,
                                                         access_token)
-                refresh_token = database.token.get_token(client_id,
+                refresh_token = database.tokens.get_token(client_id,
                                                          client_secret,
                                                          refresh_token)
             else:
-                access_token = database.token.get_token(username,
+                access_token = database.tokens.get_token(username,
                                                         password,
                                                         access_token)
-                refresh_token = database.token.get_token(username,
+                refresh_token = database.tokens.get_token(username,
                                                          password,
                                                          refresh_token)
             logging.warn('access_token %s'% (access_token))
@@ -443,21 +455,22 @@ class Provider(object):
                                     client_secret,
                                     refresh_token):
 
-        print 'refresh_token'
-        token = database.token.get_token(client_id,
+
+        token = database.tokens.get_token(client_id,
                                          client_secret,
                                          refresh_token)
+        
         if not isinstance(token, database.models.RefreshToken):
             return { 'error' : 'invalid_grant' }
 
         access_token = token.access_token
-        delete_token(access_token)
+        database.tokens.delete_token(access_token)
         del access_token
 
-        new_access_token = database.token.get_token(
+        new_access_token = database.tokens.get_token(
             client_id,
             client_secret,
-            create_access_token_from_refresh_token(token))
+            database.accesstoken.create_access_token_from_refresh_token(token))
 
         tokens = {
             'access_token' : new_access_token.code,
@@ -492,6 +505,7 @@ def access_resource_authorised(token_str):
     @returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
     '''
     token = database.accesstoken.get_access_token(token_str)
+    logging.warn('access_resource_authorised: ' + str(token))
     expired = available_scope = scope_list = True
 
     #if token is not false or none checks to see if it is a AccessToken or not
@@ -519,6 +533,7 @@ def check(username, password):
 
 def anonymous():
     urls = database.scope.get_anonymous_urls()
+    logging.warn(urls)
     urls.add('/oauth/token')
     if request.path_info in urls:
         return 'anonymous'
@@ -608,5 +623,7 @@ if __name__ == '__main__':
 
     index.who_am_i = who_am_i
     index.avatar = avatar
+
+    database.scope.add_anonymous_url('/who_am_i')
 
     quickstart(index)

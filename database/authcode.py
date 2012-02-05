@@ -15,16 +15,20 @@ def create_auth_code(client_id, uid, scope=None):
     db = DB(SERVER, PORT)
     try:
         auth_code = AuthCode(client, user, scope=scope)
-        db.dbroot[auth_code.code] = auth_code
-        transaction.commit()
+        while db.contains(auth_code.code):
+            token = AccessToken(client,
+                                user,
+                                scope=scope)
+        db.put(auth_code.code, auth_code)
+        db.commit()
         code = deepcopy(auth_code.code)
-        logging.warn('create_auth_code: ' + str(code))
+        
         return code
+    
     except Exception, e:
         logging.error(''.join(['create_auth_code: ', str(e)]))
-        transaction.abort()
+        db.abort()
     finally:
-        #transaction.commit()
         db.close()
 
     return None
@@ -34,12 +38,12 @@ def create_auth_code(client_id, uid, scope=None):
 def delete_auth_code(code):
     db = DB(SERVER, PORT)
     try:
-        if code in db.dbroot:
-            del db.dbroot[code]
-            transaction.commit()
+        if db.contains(code):
+            db.delete(code)
+            db.commit()
     except Exception, e:
         logging.error('delete_auth_code: ' + str(e))
-        tranaction.abort()
+        db.abort()
 
         return False
     finally:
@@ -53,8 +57,8 @@ def delete_auth_code(code):
 def get_auth_code(client_id, client_secret, code):
     db = DB(SERVER, PORT)
     try:
-        if code in db.dbroot:
-            auth_code = deepcopy(db.dbroot[code])
+        if db.contains(code):
+            auth_code = deepcopy(db.get(code))
                 
             if auth_code.expire + auth_code.created > time() and \
                    auth_code.client.id == client_id and \

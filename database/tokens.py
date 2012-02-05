@@ -15,8 +15,8 @@ def get_token(client_id, client_secret, code):
     '''
     db = DB(SERVER, PORT)
     try:
-        if code in db.dbroot:
-            token = deepcopy(db.dbroot[code])
+        if db.contains(code):
+            token = deepcopy(db.get(code))
         
             if (not token.expire or token.expire + \
                 token.created > time()) and \
@@ -44,52 +44,23 @@ def get_token(client_id, client_secret, code):
 
 
 
-def get_access_token(token_str):
-    db = DB(SERVER, PORT)
-    try:
-        if token_str in db.dbroot:
-            token = deepcopy(db.dbroot[token_str])
-            
-            if isinstance(token, AccessToken) and \
-                   not token.expire or \
-                   token.expire + token.created > time():
-                return token
-            else:
-                logging.warn(''.join(['get_access_token: Token ',
-                                      str(token.code),
-                                      ' has expired for client ',
-                                      str(token.client.id),
-                                      ' and user ',
-                                      str(token.user.id)]))
-        else:
-            logging.warn(''.join(['get_access_token: token ',
-                                  str(token_str),
-                                  ' is not in database']))
-    except Exception, e:
-        logging.error(''.join(['get_access_token(', str(token_str), '): ', str(e)]))
-    finally:
-        db.close()
-            
-    return False
-
-
 def delete_token(token):
     db = DB(SERVER, PORT)
     try:
         if isinstance(token, AuthCode):
-            del db.dbroot[token.code]
+            db.delete(token.code)
         elif isinstance(token, str):
-            del db.dbroot[token]
+            db.delete(token)
         else:
             logging.warning('delete_token: token ' + str(token) + \
                             ' is neither an' + \
                             ' AutCode type nor is it a string')
             return
         
-        transaction.commit()
+        db.commit()
     except Exception, e:
         logging.error('delete_token: ' + str(e))
-        transaction.abort()
+        db.abort()
     finally:
         db.close()
 

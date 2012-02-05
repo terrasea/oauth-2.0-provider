@@ -7,6 +7,25 @@ import logging
 import transaction
 from copy import deepcopy
 
+
+def isassociated(user, client, refresh_token_str):
+    db = DB(SERVER, PORT)
+    try:
+        key = 'client_association_' + str(user.id)
+        if db.contains(key):
+            association = db.get(key)
+            return client.id in association.clients
+        else:
+            return False
+                
+    except Exception, e:
+        logging.error('isassociated: ' + str(e))
+        raise e
+    finally:
+        db.close()
+
+    return False
+
 def associate_client_with_user(user, client, refresh_token_str):
     """
     Adds client to list of authorised clients who can access the users resources on a long term basis
@@ -27,18 +46,11 @@ def associate_client_with_user(user, client, refresh_token_str):
     db = DB(SERVER, PORT)
     try:
         key = 'client_association_' + str(user.id)
-        if key in db.dbroot:
-            association = db.dbroot[key]
+        if db.contains(key):
+            association = db.get(key)
             if client.id not in association.clients:
-                # get the refresh token which contains the client,
-                # user and access token, as well as the
-                # refresh_token code. This allows us to delete the
-                # access token and the refresh_token stopping the
-                # client from accessing the users resources.
-                association.clients[client.id] = get_token(client.id,
-                                                           client.secret,
-                                                           refresh_token_str)
-                association._p_changed = True
+                association.clients[client.id] = refresh_token
+                db.update(key, association)
             else:
                 raise AssociationExistsWarning(''.join(['Client ',
                                                         str(client.id),
@@ -49,13 +61,13 @@ def associate_client_with_user(user, client, refresh_token_str):
             association.clients[client.id] = get_token(client.id,
                                                        client.secret,
                                                        refresh_token_str)
-            db.dbroot[key] = association
+            db.put(key, association)
             
-        transaction.commit()
+        db.commit()
     except Exception, e:
         logging.error(''.join(['associate_client_with_user: ', str(e)]))
         raise e
-        transaction.abort()
+        db.abort()
     finally:
         db.close()
 
@@ -66,14 +78,46 @@ def get_associations(user):
     db = DB(SERVER, PORT)
     try:
         key = 'client_association_' + str(user.id)
-        if key in db.dbroot:
-            return deepcopy(db.dbroot[key])
+        if db.contains(key):
+            return deepcopy(db.get(key))
     except Exception, e:
         logging.error('get_associations: ' + str(e))
     finally:
         db.close()
 
     return False
+
+
+
+
+def update_association(user, client, refresh_token_str):
+    refresh_token = get_token(client.id, client.secret, refresh_token_str)
+    #always check to see if it is confidential or not.
+    #it shouldn't be if it's using update_association, but you never know
+    #and it's good to have a log message to possible alert the admin that
+    #this is going on.
+    if refresh_token.client.type.lower() != 'confidential':
+        client_id = refresh_token.client.id
+        raise ConfidentailError('Client ' + client_id + \
+                                ' is not a confidentail client')
+
+    db = DB(SERVER, PORT)
+    try:
+        key = 'client_association_' + str(user.id)
+        if db.contains(key):
+            association = db.get(key)
+            if client.id in association.clients:
+                 association.clients[client.id] = refresh_token
+                 db.update(key, association)
+                 db.commit()
+    except Exception, e:
+        logging.error('get_associations: ' + str(e))
+        db.abort()
+    finally:
+        db.close()
+
+    return False
+
 
 
 if __name__ == '__main__':

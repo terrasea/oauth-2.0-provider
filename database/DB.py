@@ -1,29 +1,49 @@
-import cherrypy
-import logging
-import array
-from models import Association, User, Client, \
-     AuthCode, AccessToken, RefreshToken
 from ZEO.ClientStorage import ClientStorage
 from ZODB import DB as ZDB
 import transaction
-from time import time
-from copy import deepcopy
-from errors import *
-
-#from client import get_client
+from persistent import Persistent
 
 SERVER = 'localhost'
 PORT = 6000
-
-
-
+ 
 
 class ZODB(object):
-    def __init__(self, server, port):
+    def __init__(self, server=SERVER, port=PORT):
         self.storage = ClientStorage((server, port,))
         self.db = ZDB(self.storage)
         self.connection = self.db.open()
         self.dbroot = self.connection.root()
+
+
+    # KISS policy
+    # let the lookup raise its own exception on a key lookup problem, etc
+    def get(self, key):
+        return self.dbroot[key]
+
+
+    def put(self, key, data):
+        self.dbroot[key] = data
+
+    def update(self, key, data):
+        if isinstance(data, Persistent):
+            data._p_changed = True
+        else:
+            self.dbroot[key] = data
+
+    def delete(self, key):
+        del self.dbroot[key]
+
+    def commit(self):
+        transaction.commit()
+
+
+    def abort(self):
+        transaction.abort()
+        
+    def contains(self, key):
+        return key in self.dbroot
+
+
 
     def close(self):
         self.connection.close()

@@ -17,9 +17,9 @@ def create_client(client_name,
                      client_type)
     db = DB(SERVER, PORT)
     try:
-        if client_id not in db.dbroot:
-            db.dbroot[client_id] = client
-            transaction.commit()
+        if not db.contains(client_id):
+            db.put(client_id, client)
+            db.commit()
             
             return client
         else:
@@ -28,7 +28,7 @@ def create_client(client_name,
         
     except Exception, e:
         logging.error(''.join(['create_client: ', str(e)]))
-        transaction.abort()
+        db.abort()
     finally:
         db.close()
         
@@ -40,8 +40,7 @@ def create_client(client_name,
 def client_exists(client_id):
     db = DB(SERVER, PORT)
     try:
-        if client_id in db.dbroot:
-            return True
+        return db.contains(client_id)
     except Exception, e:
         logging.warn(''.join(['client_exists: ', str(e)]))
     finally:
@@ -54,8 +53,8 @@ def client_exists(client_id):
 def get_client(client_id):
     db = DB(SERVER, PORT)
     try:
-        if client_id in db.dbroot:
-            client = db.dbroot[client_id]
+        if db.contains(client_id):
+            client = db.get(client_id)
             
             return deepcopy(client)
     except Exception, e:
@@ -71,17 +70,17 @@ def get_client(client_id):
 def delete_client(client_id):
     db = DB(SERVER, PORT)
     try:
-        if client_id in db.dbroot:
-            del db.dbroot[client_id]
-            transaction.commit()
+        if db.contains(client_id):
+            db.delete(client_id)
+            db.commit()
             
             return True
         else:
             logging.info('remove_client: client of ' + \
                          str(client_id) + ' does not exist')
     except Exception, e:
-        transaction.abort()
         logging.error('remove_client: ' + str(e))
+        db.abort()
     finally:
         db.close()
 

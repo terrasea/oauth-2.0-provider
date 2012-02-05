@@ -17,13 +17,18 @@ def create_refresh_token_from_code(auth_code, access_token):
                              auth_code.client,
                              auth_code.user,
                              scope=auth_code.scope)
-        db.dbroot[token.code] = token
-        transaction.commit()
+        while db.contains(token.code):
+            token = RefreshToken(access_token,
+                                 auth_code.client,
+                                 auth_code.user,
+                                 scope=auth_code.scope)
+        db.put(token.code, token)
+        db.commit()
         
         return token.code
     except Exception, e:
         logging.error(''.join(['create_refresh_token_from_code ', str(e)]))
-        transaction.abort()
+        db.abort()
     finally:
         db.close()
         delete_token(auth_code)
@@ -59,15 +64,20 @@ def create_refresh_token_from_user_pass(client_id,
                                      client,
                                      user,
                                      scope=scope)
-                db.dbroot[token.code] = token
+                while db.contains(token.code):
+                    token = RefreshToken(access_token,
+                                         client,
+                                         user,
+                                         scope=scope)
+                db.put(token.code, token)
                 
-                transaction.commit()
+                db.commit()
 
                 return token.code
             except Exception, e:
                 logging.error(''.join(['create_refresh_token_from_user_pass: ',
                                        str(e)]))
-                transaction.abort()
+                db.abort()
             finally:
                 db.close()
     except Exception, e:
@@ -76,3 +86,4 @@ def create_refresh_token_from_user_pass(client_id,
     
 
     return False
+

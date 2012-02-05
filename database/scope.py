@@ -5,17 +5,17 @@ def add_anonymous_url(url):
     db = DB(SERVER, PORT)
     try:
         if 'anonymous_urls' in db.dbroot:
-            urls = db.dbroot['anonymous_urls']
+            urls = db.get('anonymous_urls')
             urls.add(url)
-            db.dbroot['anonymous_urls'] = urls
+            db.put('anonymous_urls', urls)
         else:
             urls = set()
             urls.add(url)
-            db.dbroot['anonymous_urls'] = urls
-        transaction.commit()
+            db.put('anonymous_urls', urls)
+        db.commit()
     except Exception, e:
         logging.error(''.join(['add_anonymous_url: ', str(e)]))
-        transaction.abort()
+        db.abort()
     finally:
         db.close()
         
@@ -23,7 +23,7 @@ def add_anonymous_url(url):
 def get_anonymous_urls():
     db = DB(SERVER, PORT)
     try:
-        return db.dbroot['anonymous_urls']
+        return db.get('anonymous_urls')
     except Exception, e:
         logging.error(''.join(['get_anonymous_urls: ', str(e)]))
     finally:
