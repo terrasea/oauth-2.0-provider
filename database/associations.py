@@ -122,12 +122,36 @@ def update_association(user, client, refresh_token_str):
 
 if __name__ == '__main__':
     from user import add_user, get_user, delete_user
-    from client import create_client, get_client, delete_client
-    from models import RefreshToken
+    from client import create_client, get_client, delete_client, client_exists
+    from models import AccessToken, RefreshToken
     add_user('jim', 'password')
     user = get_user('jim')
-    client = create_client('bob',
-                           'bobby',
-                           'iamcool',
-                           'http://whaever.com')
-    associate_client_with_user(user, client, '')
+    if not client_exists('bobby fiet3'):
+        client = create_client('bob',
+                               'bobby fiet3',
+                               'iamcool',
+                               'http://whaever.com')
+    else:
+        client = get_client('bobby fiet3')
+    access_token = AccessToken(client, user)
+    refresh_token = RefreshToken(access_token, client, user)
+    db = DB(SERVER, PORT)
+    try:
+        db.put(access_token.code, access_token)
+        db.put(refresh_token.code, refresh_token)
+        db.commit()
+    finally:
+        db.close()
+    try:
+        associate_client_with_user(user, client, refresh_token.code)
+    except:
+        pass
+    associations = get_associations(user)
+    print
+    print associations.user.id, associations.user.password
+    print
+    print 'clients'
+    print
+    for x in associations.clients:
+        print x
+        

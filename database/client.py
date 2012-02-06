@@ -21,7 +21,7 @@ def create_client(client_name,
             db.put(client_id, client)
             db.commit()
             
-            return client
+            return deepcopy(client)
         else:
             raise ClientExistsWarning(''.join(['Client with id of ',str(client_id), ' already exists']))
         
@@ -42,7 +42,7 @@ def client_exists(client_id):
     try:
         return db.contains(client_id)
     except Exception, e:
-        logging.warn(''.join(['client_exists: ', str(e)]))
+        logging.error(''.join(['client_exists: ', str(e)]))
     finally:
         db.close()
         

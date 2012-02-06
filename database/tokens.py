@@ -16,7 +16,7 @@ def get_token(client_id, client_secret, code):
     db = DB(SERVER, PORT)
     try:
         if db.contains(code):
-            token = deepcopy(db.get(code))
+            token = db.get(code)
         
             if (not token.expire or token.expire + \
                 token.created > time()) and \

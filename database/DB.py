@@ -3,16 +3,33 @@ from ZODB import DB as ZDB
 import transaction
 from persistent import Persistent
 
+from models import RefreshToken
+
+import logging
+
 SERVER = 'localhost'
 PORT = 6000
  
+db = None
+storage = None
+connection = None
+dbroot = None
 
 class ZODB(object):
     def __init__(self, server=SERVER, port=PORT):
-        self.storage = ClientStorage((server, port,))
-        self.db = ZDB(self.storage)
-        self.connection = self.db.open()
-        self.dbroot = self.connection.root()
+        global storage, db, connection, dbroot
+        if not db:
+            logging.warn('db is not set')
+            self.storage = storage = ClientStorage((server, port,))
+            self.db = db = ZDB(self.storage)
+            self.connection = connection = self.db.open()
+            self.dbroot = dbroot = self.connection.root()
+        else:
+            logging.warn('db is already set')
+            self.storage = storage
+            self.db = db
+            self.connection = connection
+            self.dbroot = dbroot
 
 
     # KISS policy
@@ -24,14 +41,19 @@ class ZODB(object):
     def put(self, key, data):
         self.dbroot[key] = data
 
-    def update(self, key, data):
+    def update(self, key, data, attribute=None, value=None):
         if isinstance(data, Persistent):
             data._p_changed = True
+            #self.commit()
         else:
             self.dbroot[key] = data
+            logging.warn('Not Persistent')
 
     def delete(self, key):
-        del self.dbroot[key]
+        if key in self.dbroot:
+            del self.dbroot[key]
+        else:
+            logging.warn('key does not exist ' + key)
 
     def commit(self):
         transaction.commit()
@@ -46,6 +68,10 @@ class ZODB(object):
 
 
     def close(self):
+        pass
+
+
+    def finish(self):
         self.connection.close()
         self.db.close()
         self.storage.close()

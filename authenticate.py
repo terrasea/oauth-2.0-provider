@@ -64,6 +64,7 @@ class Provider(object):
                 error_list.append(('state', state,))
             error_str.write('?')
             error_str.write(urlencode(error_list))
+
             raise HTTPRedirect(error_str.getvalue())
 
 
@@ -77,6 +78,7 @@ class Provider(object):
                 error_list.append(('state', state))
             error_str.write('?')
             error_str.write(urlencode(error_list))
+
             raise HTTPRedirect(error_str.getvalue())
 
     
@@ -97,6 +99,7 @@ class Provider(object):
                     error_list.append(('state', state))
                 error_str.write('?')
                 error_str.write(urlencode(error_list))
+
                 raise HTTPRedirect(error_str.getvalue())
 
 
@@ -152,9 +155,12 @@ class Provider(object):
 
         if response_type == 'code':
             grant.token = None
+            
             return str(grant)
+        
         elif response_type == 'token':
             grant.token = True
+            
             return str(grant)
 
 
@@ -241,7 +247,7 @@ class Provider(object):
                 ## The client is sent back an authorisation code,
                 ## which it uses to gain an access token later.
                 uid = request.login
-                logging.warn('uid is ' + str(uid))
+                
                 auth_code_str = database.authcode.create_auth_code(client_id, uid, scope)
 
                 response_list.append(('code', auth_code_str))
@@ -283,7 +289,6 @@ class Provider(object):
         returns a json string containing the
         access token and/or refresh token.
         '''
-        logging.warn('grant_type is ' + str(grant_type))
 
         if 'authorization_code' == grant_type:
             return self.process_auth_code_grant(client_id,
@@ -316,13 +321,18 @@ class Provider(object):
             return {'error' : 'invalid_grant' }
 
 
+
+
+
+
+
     def process_auth_code_grant(self,
                                 client_id,
                                 client_secret,
                                 scope,
                                 code,
                                 redirect_uri):
-        logging.warn('client_id: ' + str(client_id) + ' client_secret: ' + str(client_secret) + ' code: ' + str(code))
+
         client = database.client.get_client(client_id)
 
         auth_code = database.authcode.get_auth_code(client_id,
@@ -416,7 +426,7 @@ class Provider(object):
                 refresh_token = database.tokens.get_token(username,
                                                          password,
                                                          refresh_token)
-            logging.warn('access_token %s'% (access_token))
+            
             tokens = {
                 'access_token'  : access_token.code,
                 'token_type'    : 'bearer',
@@ -426,9 +436,23 @@ class Provider(object):
             if scope:
                 tokens.update({'scope'         : scope})
 
-                database.associations.associate_client_with_user(refresh_token.user,
-                                                                 refresh_token.client,
-                                                                 refresh_token)
+
+            try:
+                if not database.associations.isassociated(refresh_token.user,
+                                                          refresh_token.client,
+                                                          refresh_token):
+                    database.associations.associate_client_with_user(refresh_token.user,
+                                                                     refresh_token.client,
+                                                                     refresh_token)
+                else:
+                    database.associations.update_association(refresh_token.user,
+                                                             refresh_token.client,
+                                                             refresh_token)
+
+            except AssociationExistsWarning, e:
+                logging.warning('process_auth_code_grant: ' + str(e))
+
+
 
             return tokens
 
@@ -457,14 +481,14 @@ class Provider(object):
 
 
         token = database.tokens.get_token(client_id,
-                                         client_secret,
-                                         refresh_token)
+                                          client_secret,
+                                          refresh_token)
         
         if not isinstance(token, database.models.RefreshToken):
             return { 'error' : 'invalid_grant' }
 
         access_token = token.access_token
-        database.tokens.delete_token(access_token)
+        #database.tokens.delete_token(access_token)
         del access_token
 
         new_access_token = database.tokens.get_token(
@@ -505,7 +529,7 @@ def access_resource_authorised(token_str):
     @returns the AccessToken object for the token string on success or the error message in the form of a python dictionary
     '''
     token = database.accesstoken.get_access_token(token_str)
-    logging.warn('access_resource_authorised: ' + str(token))
+    
     expired = available_scope = scope_list = True
 
     #if token is not false or none checks to see if it is a AccessToken or not
@@ -533,10 +557,12 @@ def check(username, password):
 
 def anonymous():
     urls = database.scope.get_anonymous_urls()
-    logging.warn(urls)
-    urls.add('/oauth/token')
-    if request.path_info in urls:
-        return 'anonymous'
+
+    if urls:
+        urls.add('/oauth/token')
+        if request.path_info in urls:
+            return 'anonymous'
+        
     
 
 
@@ -569,7 +595,7 @@ def avatar(access_token=None):
             with open('users/%s/avatar.svg' % (user.id)) as avatar:
                 return avatar.read()
         except IOError, io:
-            logging.warn(str(io))
+            logging.error(str(io))
             return None
             
 

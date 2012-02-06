@@ -1,20 +1,22 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import ZODB as DB
+import DB as GDB
 from client import get_client
 from user import get_user
 from models import AccessToken
-from tokens import delete_token
+from tokens import delete_token, get_token
 
 from time import time
 from copy import deepcopy
 import transaction
 import logging
 
+GDB.db = DB()
+
 def create_access_token_from_code(auth_code):
-    logging.warn(str(auth_code))
     client = get_client(auth_code.client.id)
     user = get_user(auth_code.user.id)
 
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         token = AccessToken(client,
                             user,
@@ -41,7 +43,7 @@ def create_implicit_grant_access_token(uid, client_id,
                                        redirect_uri, scope=None):
     user = get_user(uid)
     client = get_client(client_id)
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         
         #the only authentication here is to check the
@@ -93,7 +95,7 @@ def create_access_token_from_user_pass(client_id,
         
     user = get_user(user_id)
     
-    db = DB(SERVER, PORT)
+    db = DB()
     
     try:
         if client != None and \
@@ -130,31 +132,39 @@ def create_access_token_from_refresh_token(refresh_token):
     We assume that in the getting of the refresh_token,
     before calling this function, the authentication takes place there.
     '''
-    #disconnect the data reference from the data stored in the DB
-    refresh_token_copy = deepcopy(refresh_token)
-
-    #delete old access_token and create a new access_token
-    #to replace the old one. refresh_token.access_token is
-    #the string code not an AccessToken object
-    delete_token(refresh_token_copy.access_token)
-
-    db = DB(SERVER, PORT)
     
-    #use the info stored in the refresh_token copy to create a
-    #new AccessToken
+    #disconnect the data reference from the data stored in the DB
+    #refresh_token_copy = deepcopy(refresh_token)
+    global db
+    db = DB()
     try:
-        token = AccessToken(refresh_token_copy.client,
-                            refresh_token_copy.user,
-                            refresh_token_copy.scope)
+        #refresh_token = get_token(refresh_token_str)
+
+        #delete old access_token and create a new access_token
+        #to replace the old one. refresh_token.access_token is
+        #the string code not an AccessToken object
+        delete_token(refresh_token.access_token)
+
+    
+    
+        
+        #use the info stored in the refresh_token copy to create a
+        #new AccessToken
+    
+        token = AccessToken(refresh_token.client,
+                            refresh_token.user,
+                            refresh_token.scope)
         while db.contains(token.code):
-            token = AccessToken(refresh_token_copy.client,
-                                refresh_token_copy.user,
-                                refresh_token_copy.scope)
+            token = AccessToken(refresh_token.client,
+                                refresh_token.user,
+                                refresh_token.scope)
 
         
         db.put(token.code, token)
-        refresh_token.access_token = token
+        logging.warn('is a token ' + str(token))
+        refresh_token.access_token = token.code
         db.update(refresh_token.code, refresh_token)
+        logging.warn('has changed ' + str(refresh_token._p_changed))
         db.commit()
 
         #return access token string not AccessToken object
@@ -170,11 +180,11 @@ def create_access_token_from_refresh_token(refresh_token):
 
 
 def get_access_token(token_str):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(token_str):
             token = deepcopy(db.get(token_str))
-            logging.warn('get_access_token: ' + str(token.expire) + ', ' + str(token.created))
+            
             if isinstance(token, AccessToken) and \
                    not token.expire or \
                    token.expire + token.created > time():

@@ -1,5 +1,6 @@
 from DB import ZODB as DB, SERVER, PORT
 import transaction
+import logging
 
 def add_anonymous_url(url):
     db = DB(SERVER, PORT)
