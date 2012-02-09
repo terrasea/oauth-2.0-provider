@@ -205,13 +205,16 @@ class Provider(object):
 
             response_list = list()
             if token:
+                uid = request.login
                 auth_token_str = \
                                database.accesstoken.create_implicit_grant_access_token(
+                    uid,
                     client_id,
                     redirect_uri,
                     scope)
 
                 if not auth_token_str:
+                    logging.warn('token unauthorised: ' + str(auth_token_str));
                     ##Error not authorised
                     error_str = StringIO()
 

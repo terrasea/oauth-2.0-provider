@@ -9,28 +9,27 @@ import logging
 
 SERVER = 'localhost'
 PORT = 6000
- 
-db = None
-storage = None
-connection = None
-dbroot = None
 
+
+def singleton(cls):
+    instances = dict()
+    def getinstance(*args, **kwargs):
+        if cls not in instances:
+            instances[cls] = cls(*args, **kwargs)
+
+        return instances[cls]
+
+
+    return getinstance
+
+
+@singleton
 class ZODB(object):
     def __init__(self, server=SERVER, port=PORT):
-        global storage, db, connection, dbroot
-        if not db:
-            logging.warn('db is not set')
-            self.storage = storage = ClientStorage((server, port,))
-            self.db = db = ZDB(self.storage)
-            self.connection = connection = self.db.open()
-            self.dbroot = dbroot = self.connection.root()
-        else:
-            logging.warn('db is already set')
-            self.storage = storage
-            self.db = db
-            self.connection = connection
-            self.dbroot = dbroot
-
+        self.storage = storage = ClientStorage((server, port,))
+        self.db = db = ZDB(self.storage)
+        self.connection = connection = self.db.open()
+        self.dbroot = dbroot = self.connection.root()
 
     # KISS policy
     # let the lookup raise its own exception on a key lookup problem, etc
@@ -44,16 +43,14 @@ class ZODB(object):
     def update(self, key, data, attribute=None, value=None):
         if isinstance(data, Persistent):
             data._p_changed = True
-            #self.commit()
         else:
             self.dbroot[key] = data
-            logging.warn('Not Persistent')
 
     def delete(self, key):
         if key in self.dbroot:
             del self.dbroot[key]
         else:
-            logging.warn('key does not exist ' + key)
+            raise 
 
     def commit(self):
         transaction.commit()
@@ -96,6 +93,7 @@ if __name__ == '__main__j':
     from unittest import TestCase, main
     from ZODB.FileStorage import FileStorage
 
+    @singleton
     class ClientStorage(FileStorage):
         def __init__(self, server_port):
             super(ClientStorage, self).__init__('/tmp/testdb.fs')

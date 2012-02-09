@@ -47,14 +47,14 @@ def get_token(client_id, client_secret, code):
 def delete_token(token):
     db = DB(SERVER, PORT)
     try:
-        if isinstance(token, AuthCode):
+        if isinstance(token, Code):
             db.delete(token.code)
         elif isinstance(token, str):
             db.delete(token)
         else:
             logging.warning('delete_token: token ' + str(token) + \
                             ' is neither an' + \
-                            ' AutCode type nor is it a string')
+                            ' AuthCode type nor is it a string')
             return
         
         db.commit()

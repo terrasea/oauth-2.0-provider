@@ -1,7 +1,7 @@
 from DB import ZODB as DB, SERVER, PORT
 from errors import *
 from models import Association
-from tokens import get_token
+from tokens import get_token, delete_token
 
 import logging
 import transaction
@@ -107,9 +107,11 @@ def update_association(user, client, refresh_token_str):
         if db.contains(key):
             association = db.get(key)
             if client.id in association.clients:
-                 association.clients[client.id] = refresh_token
-                 db.update(key, association)
-                 db.commit()
+                delete_token(association.clients[client.id].access_token)
+                delete_token(association.clients[client.id].code)
+                association.clients[client.id] = refresh_token
+                db.update(key, association)
+                db.commit()
     except Exception, e:
         logging.error('get_associations: ' + str(e))
         db.abort()
