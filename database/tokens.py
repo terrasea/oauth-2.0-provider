@@ -1,5 +1,6 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import DB
 from models import *
+from client import get_client
 
 from copy import deepcopy
 import logging
@@ -13,15 +14,15 @@ def get_token(client_id, client_secret, code):
     return the type of token that was created
     in create_[...]_token
     '''
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(code):
             token = db.get(code)
-        
+            client = get_client(token.client)
             if (not token.expire or token.expire + \
                 token.created > time()) and \
-                token.client.id == client_id and \
-                token.client.secret == client_secret:
+                client.id == client_id and \
+                client.secret == client_secret:
             
                 return token
             else:
@@ -45,14 +46,14 @@ def get_token(client_id, client_secret, code):
 
 
 def delete_token(token):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if isinstance(token, Code):
             db.delete(token.code)
         elif isinstance(token, str):
             db.delete(token)
         else:
-            logging.warning('delete_token: token ' + str(token) + \
+            logging.warn('delete_token: token ' + str(token) + \
                             ' is neither an' + \
                             ' AuthCode type nor is it a string')
             return

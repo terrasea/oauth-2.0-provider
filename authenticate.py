@@ -19,6 +19,8 @@ import database.refreshtoken
 import database.tokens
 import database.associations
 
+from database.errors import *
+
 from user_resource_grant import user_resource_grant
 
 
@@ -270,7 +272,7 @@ class Provider(object):
         #if both allow and deny are
         #None or False then will fall through to here
         return "<html><head><title>A problem occured" + \
-               "</title></head><body><div>Aproblem occured</div></body></html>"
+               "</title></head><body><div>A problem occured</div></body></html>"
 
 
     @expose
@@ -369,19 +371,22 @@ class Provider(object):
                 tokens.update({'scope'         : scope})
 
             try:
+                
                 if not database.associations.isassociated(auth_code.user,
                                                           auth_code.client,
                                                           refresh_token_str):
+                    
                     database.associations.associate_client_with_user(auth_code.user,
                                                                      auth_code.client,
                                                                      refresh_token_str)
                 else:
+                    #import pdb; pdb.set_trace()
                     database.associations.update_association(auth_code.user,
                                                              auth_code.client,
                                                              refresh_token_str)
 
             except AssociationExistsWarning, e:
-                logging.warning('process_auth_code_grant: ' + str(e))
+                logging.warn('process_auth_code_grant: ' + str(e))
             finally:
                 database.authcode.delete_auth_code(code)
 
@@ -453,7 +458,7 @@ class Provider(object):
                                                              refresh_token)
 
             except AssociationExistsWarning, e:
-                logging.warning('process_auth_code_grant: ' + str(e))
+                logging.warn('process_auth_code_grant: ' + str(e))
 
 
 
@@ -654,5 +659,6 @@ if __name__ == '__main__':
     index.avatar = avatar
 
     database.scope.add_anonymous_url('/who_am_i')
+    database.scope.add_anonymous_url('/avatar')
 
     quickstart(index)

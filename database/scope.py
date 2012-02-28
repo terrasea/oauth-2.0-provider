@@ -1,11 +1,11 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import DB
 import transaction
 import logging
 
 def add_anonymous_url(url):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
-        if 'anonymous_urls' in db.dbroot:
+        if db.contains('anonymous_urls'):
             urls = db.get('anonymous_urls')
             urls.add(url)
             db.put('anonymous_urls', urls)
@@ -22,7 +22,7 @@ def add_anonymous_url(url):
         
 
 def get_anonymous_urls():
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         return db.get('anonymous_urls')
     except Exception, e:

@@ -22,6 +22,8 @@ class Association(Persistent):
 
     @property
     def clients(self):
+        #this is a dict with the client id as key
+        #and refresh token object as value
         return self._clients
 
 

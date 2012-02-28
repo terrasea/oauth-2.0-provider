@@ -1,4 +1,4 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import DB
 from models import Client
 from errors import ClientExistsWarning
 import transaction
@@ -15,7 +15,7 @@ def create_client(client_name,
                      client_secret,
                      redirect_uri,
                      client_type)
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if not db.contains(client_id):
             db.put(client_id, client)
@@ -38,7 +38,7 @@ def create_client(client_name,
 
 
 def client_exists(client_id):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         return db.contains(client_id)
     except Exception, e:
@@ -51,7 +51,7 @@ def client_exists(client_id):
 
 
 def get_client(client_id):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(client_id):
             client = db.get(client_id)
@@ -68,7 +68,7 @@ def get_client(client_id):
 
 
 def delete_client(client_id):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(client_id):
             db.delete(client_id)

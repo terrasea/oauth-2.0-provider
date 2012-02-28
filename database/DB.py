@@ -1,21 +1,66 @@
-from ZEO.ClientStorage import ClientStorage
-from ZODB import DB as ZDB
-import transaction
-from persistent import Persistent
-
 from models import RefreshToken
 
 import logging
+import time
 
 SERVER = 'localhost'
 PORT = 6000
 
+ZODB=0
+MONGO=1
+POSTGRE=2
+MYSQL=3
 
-def singleton(cls):
+DBTYPE=MONGO
+
+
+class BaseDB(object):
+    def __init__(self):
+        raise NotImplemented()
+
+    def get(self, key):
+        pass
+
+    def put(self, key, value):
+        pass
+
+
+    def update(self, key, value):
+        pass
+
+
+    def delete(self, key):
+        pass
+
+
+    def commit(self):
+        pass
+
+    def abort(self):
+        pass
+
+    def contains(self, key):
+        pass
+
+    def close(self):
+        pass
+
+
+def singletonconnection(cls):
     instances = dict()
+    @classmethod
+    def close(cls):
+        return
+
+    origclose = cls.close
+    cls.close = close
+    cls.origclose = origclose
+    
     def getinstance(*args, **kwargs):
         if cls not in instances:
             instances[cls] = cls(*args, **kwargs)
+            
+        logging.warn('cls is ' + str(cls))
 
         return instances[cls]
 
@@ -23,613 +68,267 @@ def singleton(cls):
     return getinstance
 
 
-@singleton
-class ZODB(object):
-    def __init__(self, server=SERVER, port=PORT):
-        self.storage = storage = ClientStorage((server, port,))
-        self.db = db = ZDB(self.storage)
-        self.connection = connection = self.db.open()
-        self.dbroot = dbroot = self.connection.root()
+STALE_DURATION=60.0*3
 
-    # KISS policy
-    # let the lookup raise its own exception on a key lookup problem, etc
-    def get(self, key):
-        return self.dbroot[key]
+def connection_pool(cls):
+    used_pool = list()
+    available_pool = list()
+    
+    def stale(entry):
+        (conn, created) = entry
+        now = time.time()
+        return created + STALE_DURATION < now
+    
+    def clean():
+        """
+        removes all stale (old) connections from the pool
+        """
+        for x in available_pool:
+            if stale(x):
+                x[0].realclose()
+                
+        pool = [x for x in available_pool if stale(x)]
+        for x in pool:
+            available_pool.remove(x)
+            
+        
+
+    def put_available(conn, created=time.time()):
+        available_pool.append((conn, created))
+
+    def put_used(conn, created=time.time()):
+        used_pool.append((conn, created))
+
+    def is_connection(conn, entry):
+        return conn == entry[0]
+
+    def used_to_available(conn):
+        for entry in used_pool:
+            if is_connection(conn, entry):
+                used_pool.remove(entry)
+                available_pool.append(entry)
+                logging.warn('used_to_available found and swapped conn in lists')
+                return
+        logging.warn('used_to_available not found and swapped conn in lists')
+        
+
+    def close(cls):
+        logging.warn('used to available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
+        used_to_available(cls)
+        logging.warn('used to available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
+
+    def getconnection(*args, **kwargs):
+        """
+        returns the next available connection in the pool.  Creates a new one, adds it to the poll and returns that one, if no available connections exist.
+        """
+        clean()
+        logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
+        try:
+            (conn, created) = available_pool.pop()
+            put_used(conn, created)
+            logging.warn('conn got from already available')
+            logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
+            return conn
+        except Exception, e:
+            logging.error(str(e))
+            realclose = cls.close
+            cls.close = close
+            cls.realclose = realclose
+            conn = cls(*args, **kwargs)
+            logging.warn('new conn created')
+            put_used(conn)
+            logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
+            return conn
+    
+
+    return getconnection
 
 
-    def put(self, key, data):
-        self.dbroot[key] = data
+if ZODB == DBTYPE:
+    from ZEO.ClientStorage import ClientStorage
+    from ZODB import DB as ZDB
+    import transaction
+    from persistent import Persistent
 
-    def update(self, key, data, attribute=None, value=None):
-        if isinstance(data, Persistent):
-            data._p_changed = True
-        else:
+
+    @singletonconnection
+    class DB(BaseDB):
+        def __init__(self, server=SERVER, port=PORT):
+            self.storage = ClientStorage((server, port,))
+            self.db = ZDB(self.storage)
+            self.connection = self.db.open()
+            self.dbroot = self.connection.root()
+
+
+        # KISS policy
+        # let the lookup raise its own exception on a key lookup problem, etc
+        def get(self, key):
+            return self.dbroot[key]
+
+
+        def put(self, key, data):
             self.dbroot[key] = data
 
-    def delete(self, key):
-        if key in self.dbroot:
-            del self.dbroot[key]
-        else:
-            raise 
+        def update(self, key, data):
+            if isinstance(data, Persistent):
+                data._p_changed = True
+            else:
+                self.dbroot[key] = data
 
-    def commit(self):
-        transaction.commit()
+        def delete(self, key):
+            if key in self.dbroot:
+                del self.dbroot[key]
+            
+
+        def commit(self):
+            transaction.commit()
 
 
-    def abort(self):
-        transaction.abort()
+        def abort(self):
+            transaction.abort()
+
+        def contains(self, key):
+            return key in self.dbroot
+
+
+
+        def close(self):
+            self.connection.close()
+            self.db.close()
+            self.storage.close()
+
+elif MONGO == DBTYPE:
+    from pymongo import Connection
+    from pymongo.son_manipulator import SONManipulator
+    import jsonpickle
+    import json
+    import inspect
+
+    
+    class Transform(SONManipulator):
+        """
+        Used to transparently transform class objects to dicts and back again.  This is done using jsonpickle and json modules. jsonpickle to create a json string of an object, json to turn this into a python dict or list and store in MongoDB.  On getting from DB, use json to turn dict/list to a string json value and use jsonpickle to turn this json string into the object it represents
+        """
+        def transform_incoming(self, son, collection):
+            for (key, value) in son.items():
+                if 'class' == key:
+                    son[key] = json.loads(jsonpickle.encode(value))
+                elif isinstance(value, dict):
+                    son[key] = self.transform_incoming(value, collection)
+            return son
+
+        def transform_outgoing(self, son, collection):
+            for (key, value) in son.items():
+                if 'class' == key:
+                    son[key] = jsonpickle.decode(json.dumps(value))
+                elif isinstance(value, dict):
+                    son[key] = self.transform_outgoing(value, collection)
+            return son
+
+    #connection pooling is already done on
+    #MongoDB Connections behind the scenes
+    class DB(BaseDB):
+        def __init__(self):
+            self.connection = Connection()
+            self.db = self.connection['oauth']
+            #make sure the Tranform class which is a SONManipulator is used
+            self.db.add_son_manipulator(Transform())
+            self.models = self.db.models
+
+
+        def get(self, key):
+            document = self.models.find_one({'key':key})
+            
+            return document['class']
+
+
+        def put(self, key, data):
+            #if we don't do this we end up with mutiple copies of the same data
+            if not self.contains(key):
+                document = {'key':key, 'class': data}
+                self.models.insert(document)
+            else:
+                self.update(key, data)
+            
+                
+            
+            
+
+        def update(self, key, data):
+            #import pdb; pdb.set_trace()
+            #seems you can't use a SONManipulator on updates,
+            #manipulate=True also adds a new _id which causes an
+            #'OperationFailure: Modifiers and non-modifiers cannot be mixed'
+            #Solution: do the transform directly and use the result to
+            #update the entry with and don't set manipulate=True
+            data = json.loads(jsonpickle.encode(data))
+            self.models.update({'key':key}, {"$set": {'class':data}}, multi=False, safe=True)
+            
+
+        def delete(self, key):
+            self.models.remove({'key':key})
+
+        def commit(self):
+            #we don't need this for MongoDB
+            pass
+
+
+        def abort(self):
+            #we could do this I think,
+            #but am currently debating whether to use it or not
+            pass
+
+        def contains(self, key):
+            #returns None if no entry with that key filter exists
+            #so wrapping it in bool will return False if None,
+            #True on anything else
+            return bool(self.models.find_one({'key':key}))
+
+
+        def close(self):
+            self.connection.close()
         
-    def contains(self, key):
-        return key in self.dbroot
-
-
-
-    def close(self):
-        pass
-
-
-    def finish(self):
-        self.connection.close()
-        self.db.close()
-        self.storage.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
+elif POSTGRE == DBTYPE:
+    import psycopg2
     
+    class DB(BaseDB):
+        def __init__(self):
+            self.connection = psycopg2.connect("dbname='oauth' user='terrasea' host='localhost' password=''")
+            self.cursor = connection.cursor()
+            pass
+
+        def get(self, key):
+            pass
 
 
-if __name__ == '__main__j':
-    from mock import patch
-    from unittest import TestCase, main
-    from ZODB.FileStorage import FileStorage
+        def put(self, key, data):
+            pass
 
-    @singleton
-    class ClientStorage(FileStorage):
-        def __init__(self, server_port):
-            super(ClientStorage, self).__init__('/tmp/testdb.fs')
-            
-
-    
-    
-    class TestDBFunctions(TestCase):
-        client_name = 'joe joe'
-        client_id = 'client_id'
-        client_secret = 'secret'
-        redirect_uri = 'localhost'
-        client_type = 'type'
-        user_id = 'user'
-        user_password = 'password'
         
-        def setUp(self):
-            db = DB(SERVER, PORT)
-            db.dbroot.clear()
-            transaction.commit()
-            db.close()
-                
-        
-        def test_create_client(self):
+
+        def update(self, key, data):
+            pass
+
+
+        def delete(self, key):
+            pass
+
+        def commit(self):
+            pass
+
+
+        def abort(self):
+            pass
+
+        def contains(self, key):
+            pass
+
+
+        def close(self):
+            self.cursor.close()
+            self.connection.close()
             
-            client = create_client(TestDBFunctions.client_name,
-                                   TestDBFunctions.client_id,
-                                   TestDBFunctions.client_secret,
-                                   TestDBFunctions.redirect_uri,
-                                   TestDBFunctions.client_type)
-            db = DB(SERVER, PORT)
-            self.assertEqual(db.dbroot[TestDBFunctions.client_id].id, client.id)
-            db.close()
-            
-            
-
-        def test_client_exists_function(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.client_id] = client
-            transaction.commit()
-            db.close()
-
-            self.assertTrue(client_exists(TestDBFunctions.client_id))
-
-
-        def test_get_client(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.client_id] = client
-            transaction.commit()
-            db.close()
-
-            client2 = get_client(TestDBFunctions.client_id)
-            self.assertEqual(client2.id, client.id)
-
-
-        def test_get_password(self):
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            transaction.commit()
-            db.close()
-
-            password = get_password(TestDBFunctions.user_id)
-            self.assertEqual(password, TestDBFunctions.user_password)
-
-
-        def test_get_user_by_uid(self):
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            transaction.commit()
-            db.close()
-
-            user2 = get_user(TestDBFunctions.user_id)
-            self.assertEqual(user2.id, TestDBFunctions.user_id)
-
-        def test_get_user(self):
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            transaction.commit()
-            db.close()
-            
-            user2 = get_user()
-            self.assertEqual(user2.id, TestDBFunctions.user_id)
-
-
-
-
-        def test_add_user(self):
-            add_user(TestDBFunctions.user_id,
-                     TestDBFunctions.user_password,
-                     firstname='Jim',
-                     lastname='Hudson')
-
-            db = DB(SERVER, PORT)
-
-            try:
-                user = db.dbroot[TestDBFunctions.user_id]
-                self.assertEqual(TestDBFunctions.user_id, user.id)
-                self.assertEqual(TestDBFunctions.user_password, user.password)
-                self.assertEqual('Jim', user.firstname)
-                self.assertEqual('Hudson', user.lastname)
-            finally:
-                db.close()
-
-
-
-
-
-
-        def test_associate_client_with_user(self):
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            before_length = len(db.dbroot)
-            transaction.commit()
-            db.close()
-
-            
-
-            associate_client_with_user(user, client)
-            key = ''.join(['client_association_', str(user.id)])
-            db = DB(SERVER, PORT)
-            
-            try:
-                after_length = len(db.dbroot)
-                self.assertNotEqual(before_length, after_length)
-                self.assertTrue(key in db.dbroot)
-                assoc = db.dbroot[key]
-                self.assertEqual(TestDBFunctions.user_id, assoc.user.id)
-                
-                self.assertTrue(TestDBFunctions.client_id in assoc.clients)
-                client2 = assoc.clients[TestDBFunctions.client_id]
-                self.assertEqual(TestDBFunctions.client_id, client2.id)
-            finally:
-                db.close()
-
-
-
-        def test_create_auth_code(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            transaction.commit()
-            db.close()
-            
-
-            code = create_auth_code(TestDBFunctions.client_id)
-            self.assertIsNotNone(code)
-            db = DB(SERVER, PORT)
-            self.assertTrue(code in db.dbroot)
-            self.assertTrue(isinstance(code, str))
-            code2 = deepcopy(db.dbroot[code])
-            db.close()
-
-            self.assertEqual(code, code2.code)
-
-            
-        def test_get_auth_code(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            transaction.commit()
-            db.close()
-
-
-            code2 = get_auth_code(TestDBFunctions.client_id,
-                                  TestDBFunctions.client_secret,
-                                  code.code)
-            self.assertIsNotNone(code2)
-            self.assertTrue(code2 != False)
-            self.assertEqual(code2.code, code.code)
-            self.assertEqual(code2.client.id, code.client.id)
-            self.assertEqual(code2.user.id, code.user.id)
-
-
-
-        def test_create_access_token_from_code(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            transaction.commit()
-            db.close()
-
-            token = create_access_token_from_code(code)
-            
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token in db.dbroot)
-                self.assertEqual(db.dbroot[token].code, token)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-            
-
-        def test_create_access_token_from_user_pass(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            transaction.commit()
-            db.close()
-
-            token = create_access_token_from_user_pass(
-                TestDBFunctions.client_id,
-                TestDBFunctions.client_secret,
-                TestDBFunctions.user_id,
-                TestDBFunctions.user_password,
-                '')
-
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token in db.dbroot)
-                self.assertEqual(db.dbroot[token].code, token)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-                
-
-        def test_create_access_token_from_refresh_token(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AccessToken(client, user)
-            refresh = RefreshToken(code.code, client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[refresh.code] = refresh
-            transaction.commit()
-            db.close()
-
-            token = create_access_token_from_refresh_token(refresh)
-
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token in db.dbroot)
-                self.assertEqual(db.dbroot[token].code, token)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-
-        def test_create_refresh_token_from_code(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-            token = create_refresh_token_from_code(code, access.code)
-
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token in db.dbroot)
-                self.assertEqual(db.dbroot[token].code, token)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-
-        def test_create_refresh_token_from_user_pass(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-            token = create_refresh_token_from_user_pass(
-                TestDBFunctions.client_id,
-                TestDBFunctions.client_secret,
-                TestDBFunctions.user_id,
-                TestDBFunctions.user_password,
-                '',
-                access.code)
-
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token in db.dbroot)
-                self.assertEqual(db.dbroot[token].code, token)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-        def test_get_token(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-            #we'll get the access token here
-            token = get_token(TestDBFunctions.client_id,
-                              TestDBFunctions.client_secret,
-                              access.code)
-
-            self.assertIsNotNone(token)
-            self.assertTrue(token != False)
-            
-            try:
-                db = DB(SERVER, PORT)
-                self.assertTrue(token.code in db.dbroot)
-                self.assertEqual(db.dbroot[token.code].code, token.code)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-        def test_delete_token_object(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-
-            delete_token(code)
-
-            try:
-                db = DB(SERVER, PORT)
-                self.assertFalse(code.code in db.dbroot)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-        def test_delete_token_code_str(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-
-            delete_token(code.code)
-
-            try:
-                db = DB(SERVER, PORT)
-                self.assertFalse(code.code in db.dbroot)
-            except Exception, e:
-                self.fail(str(e))
-            finally:
-                db.close()
-
-
-        def test_get_access_token(self):
-            client = Client(TestDBFunctions.client_name,
-                            TestDBFunctions.client_id,
-                            TestDBFunctions.client_secret,
-                            TestDBFunctions.redirect_uri,
-                            TestDBFunctions.client_type)
-            cherrypy.request.login = TestDBFunctions.user_id
-            
-            user = User(TestDBFunctions.user_id,
-                        TestDBFunctions.user_password)
-            code = AuthCode(client, user)
-            access = AccessToken(client, user)
-            db = DB(SERVER, PORT)
-            db.dbroot[TestDBFunctions.user_id] = user
-            db.dbroot[TestDBFunctions.client_id] = client
-            db.dbroot[code.code] = code
-            db.dbroot[access.code] = access
-            transaction.commit()
-            db.close()
-
-
-            token = get_access_token(access.code)
-            
-            self.assertFalse(isinstance(token, AuthCode))
-            self.assertFalse(isinstance(token, RefreshToken))
-            self.assertTrue(isinstance(token, AccessToken))
-            
-            
-                
-    main()
-    
-    
+elif MYSQL == DBTYPE:
+    pass
+else:
+    pass

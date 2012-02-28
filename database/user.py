@@ -1,4 +1,4 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import DB
 from models import User
 import transaction
 import logging
@@ -7,16 +7,18 @@ from errors import *
 from copy import deepcopy
 
 def get_password(uid):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(uid):
             user = db.get(uid)
+            
             return user.password
         else:
             logging.warn('get_password: user of uid ' + str(uid) + \
                          ' does not exist')
-    except Exception, e:
-        logging.error('get_password(): ' + str(e))
+    #except Exception, e:
+    #    logging.error('get_password(): ' + str(e))
+    #    raise e
     finally:
         db.close()
 
@@ -24,10 +26,10 @@ def get_password(uid):
 
 
 def get_user(uid):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(uid):
-            user = db.dbroot[uid]
+            user = db.get(uid)
 
             return deepcopy(user)
         else:
@@ -47,7 +49,7 @@ def add_user(uid, password, firstname=None, lastname=None):
                       " and password of " + str(password))
         return None
     user = User(uid, password, firstname, lastname)
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         #if it doesn't exist add it else report it does
         if not db.contains(uid):
@@ -70,7 +72,7 @@ def add_user(uid, password, firstname=None, lastname=None):
 
 
 def delete_user(uid):
-    db = DB(SERVER, PORT)
+    db = DB()
     try:
         if db.contains(uid):
             db.delete(uid)

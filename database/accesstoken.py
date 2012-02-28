@@ -1,5 +1,4 @@
-from DB import ZODB as DB
-import DB as GDB
+from DB import DB
 from client import get_client
 from user import get_user
 from models import AccessToken
@@ -10,20 +9,18 @@ from copy import deepcopy
 import transaction
 import logging
 
-GDB.db = DB()
-
 def create_access_token_from_code(auth_code):
-    client = get_client(auth_code.client.id)
-    user = get_user(auth_code.user.id)
+    client = get_client(auth_code.client)
+    user = get_user(auth_code.user)
 
     db = DB()
     try:
-        token = AccessToken(client,
-                            user,
+        token = AccessToken(client.id,
+                            user.id,
                             scope=auth_code.scope)
         while db.contains(token.code):
-            token = AccessToken(client,
-                                user,
+            token = AccessToken(client.id,
+                                user.id,
                                 scope=auth_code.scope)
         db.put(token.code, token)
         
@@ -50,12 +47,12 @@ def create_implicit_grant_access_token(uid, client_id,
         #redirect_uri is the same as the one stored
         #for the registered client
         if client.redirect_uri == redirect_uri:
-            token = AccessToken(client,
-                                user,
+            token = AccessToken(client.id,
+                                user.id,
                                 scope=scope)
             while db.contains(token.code):
-                token = AccessToken(client,
-                                    user,
+                token = AccessToken(client.id,
+                                    user.id,
                                     scope=scope)
             db.put(token.code, token)
             db.commit()
@@ -102,12 +99,12 @@ def create_access_token_from_user_pass(client_id,
                user != None and \
                client.secret == client_secret and \
                user.password == password:
-            token = AccessToken(client,
-                                user,
+            token = AccessToken(client.id,
+                                user.id,
                                 scope=scope)
             while db.contains(token.code):
-                token = AccessToken(client,
-                                    user,
+                token = AccessToken(client.id,
+                                    user.id,
                                     scope=scope)
 
             db.put(token.code, token)
@@ -135,7 +132,6 @@ def create_access_token_from_refresh_token(refresh_token):
     
     #disconnect the data reference from the data stored in the DB
     #refresh_token_copy = deepcopy(refresh_token)
-    global db
     db = DB()
     try:
         #refresh_token = get_token(refresh_token_str)

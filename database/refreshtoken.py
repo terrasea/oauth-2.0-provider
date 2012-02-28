@@ -1,4 +1,4 @@
-from DB import ZODB as DB, SERVER, PORT
+from DB import DB
 from models import RefreshToken
 from client import get_client
 from tokens import delete_token
@@ -9,10 +9,11 @@ import logging
 
 
 def create_refresh_token_from_code(auth_code, access_token):
-    db = DB(SERVER, PORT)
+    db = DB()
     
     try:
         auth_code = deepcopy(auth_code)
+        logging.warn('access_token = ' + str(access_token) + ' auth_code = ' + str(auth_code.code))
         token = RefreshToken(access_token,
                              auth_code.client,
                              auth_code.user,
@@ -58,16 +59,16 @@ def create_refresh_token_from_user_pass(client_id,
                user != None and \
                client.secret == client_secret and \
                user.password == password:
-            db = DB(SERVER, PORT)
+            db = DB()
             try:
-                token = RefreshToken(access_token,
-                                     client,
-                                     user,
+                token = RefreshToken(access_token.code,
+                                     client.id,
+                                     user.id,
                                      scope=scope)
                 while db.contains(token.code):
-                    token = RefreshToken(access_token,
-                                         client,
-                                         user,
+                    token = RefreshToken(access_token.code,
+                                         client.id,
+                                         user.id,
                                          scope=scope)
                 db.put(token.code, token)
                 
