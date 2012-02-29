@@ -1,0 +1,46 @@
+#from database.client import get_client
+#from database.tokens import get_token
+#from database.user import get_user
+#set $user = get_user($user_id)
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <title>$user.firstname $user.lastname Associations</title>
+    <script src="$jquery"></script>
+    <script>
+      $(document).ready(function() {
+        $('#remove_form').submit( function() {
+          
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <header></header>
+    <div class="association">
+      <table>
+        <thead>
+          <tr><th>Client</th><th>Scope</th><th>Remove</th></tr>
+        </thead>
+        <tbody>
+          #for $client_id, $refresh_token_str in $associations.items()
+          #set $client = $get_client($client_id)
+          #set $refresh_token = $get_token($client.id, $client.secret, $refresh_token_str)
+          <tr>
+            <td>$client.name</td>
+            <td>$refresh_token.scope</td>
+            <td>
+              <form id="remove_form" method="post" action="$action">
+                <input type="hidden" name="client_id" value="$client_id" />
+                <input type="user_id" name="user_id" value="$user_id" />
+                <input type="submit" name="submit" value="Remove" />
+              </form>
+            </td>
+          </tr>
+          #end for
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
