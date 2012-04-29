@@ -1,7 +1,11 @@
 from models import RefreshToken
 
-import logging
+import logging as logmodule
 import time
+
+
+logging = logmodule.getLogger('oauth DB')
+
 
 SERVER = 'localhost'
 PORT = 6000
@@ -213,6 +217,7 @@ elif MONGO == DBTYPE:
             for (key, value) in son.items():
                 if 'class' == key:
                     son[key] = json.loads(jsonpickle.encode(value))
+                    logging.warn('in ' + str(son[key]))
                 elif isinstance(value, dict):
                     son[key] = self.transform_incoming(value, collection)
             return son
@@ -221,6 +226,7 @@ elif MONGO == DBTYPE:
             for (key, value) in son.items():
                 if 'class' == key:
                     son[key] = jsonpickle.decode(json.dumps(value))
+                    logging.warn('out ' + str(son[key]))
                 elif isinstance(value, dict):
                     son[key] = self.transform_outgoing(value, collection)
             return son
