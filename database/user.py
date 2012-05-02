@@ -1,8 +1,10 @@
 from DB import DB
 from models import User
 import transaction
-import logging
+import logging as logmodule
 from errors import *
+
+logging = logmodule.getLogger('oauth user')
 
 from copy import deepcopy
 
@@ -11,7 +13,7 @@ def get_password(uid):
     try:
         if db.contains(uid):
             user = db.get(uid)
-            
+            logging.warn(str(user))
             return user.password
         else:
             logging.warn('get_password: user of uid ' + str(uid) + \
