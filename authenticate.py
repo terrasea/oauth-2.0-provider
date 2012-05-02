@@ -1,4 +1,3 @@
-
 """
 Carries out the responsiblity of authenticating
 the client application/program and resource owner/user
