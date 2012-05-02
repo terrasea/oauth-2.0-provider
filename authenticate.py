@@ -614,7 +614,8 @@ def avatar(access_token=None):
 def who_am_i(access_token=None):
     token = access_resource_authorised(access_token)
     if isinstance(token, database.models.AccessToken):
-        user = token.user
+        user = database.user.get_user(token.user)
+        logging.error(str(user))
         return {'id'        : user.id,
                 'firstname' : user.firstname,
                 'lastname'  : user.lastname,
