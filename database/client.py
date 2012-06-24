@@ -5,11 +5,13 @@ import transaction
 import logging
 from copy import deepcopy
 
+
 def create_client(client_name,
                   client_id,
                   client_secret,
                   redirect_uri,
                   client_type='confidential'):
+    
     client = Client( client_name,
                      client_id,
                      client_secret,
@@ -21,7 +23,7 @@ def create_client(client_name,
             db.put(client_id, client)
             db.commit()
             
-            return deepcopy(client)
+            return client
         else:
             raise ClientExistsWarning(''.join(['Client with id of ',str(client_id), ' already exists']))
         
@@ -85,6 +87,8 @@ def delete_client(client_id):
         db.close()
 
     return False
+
+
 
 
 if __name__ == '__main__':

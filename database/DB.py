@@ -72,81 +72,6 @@ def singletonconnection(cls):
     return getinstance
 
 
-STALE_DURATION=60.0*3
-
-def connection_pool(cls):
-    used_pool = list()
-    available_pool = list()
-    
-    def stale(entry):
-        (conn, created) = entry
-        now = time.time()
-        return created + STALE_DURATION < now
-    
-    def clean():
-        """
-        removes all stale (old) connections from the pool
-        """
-        for x in available_pool:
-            if stale(x):
-                x[0].realclose()
-                
-        pool = [x for x in available_pool if stale(x)]
-        for x in pool:
-            available_pool.remove(x)
-            
-        
-
-    def put_available(conn, created=time.time()):
-        available_pool.append((conn, created))
-
-    def put_used(conn, created=time.time()):
-        used_pool.append((conn, created))
-
-    def is_connection(conn, entry):
-        return conn == entry[0]
-
-    def used_to_available(conn):
-        for entry in used_pool:
-            if is_connection(conn, entry):
-                used_pool.remove(entry)
-                available_pool.append(entry)
-                logging.warn('used_to_available found and swapped conn in lists')
-                return
-        logging.warn('used_to_available not found and swapped conn in lists')
-        
-
-    def close(cls):
-        logging.warn('used to available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
-        used_to_available(cls)
-        logging.warn('used to available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
-
-    def getconnection(*args, **kwargs):
-        """
-        returns the next available connection in the pool.  Creates a new one, adds it to the poll and returns that one, if no available connections exist.
-        """
-        clean()
-        logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
-        try:
-            (conn, created) = available_pool.pop()
-            put_used(conn, created)
-            logging.warn('conn got from already available')
-            logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
-            return conn
-        except Exception, e:
-            logging.error(str(e))
-            realclose = cls.close
-            cls.close = close
-            cls.realclose = realclose
-            conn = cls(*args, **kwargs)
-            logging.warn('new conn created')
-            put_used(conn)
-            logging.warn('used & available ' + str(len(available_pool)) + ' ' + str(len(used_pool)))
-            return conn
-    
-
-    return getconnection
-
 
 if ZODB == DBTYPE:
     from ZEO.ClientStorage import ClientStorage
@@ -173,11 +98,13 @@ if ZODB == DBTYPE:
         def put(self, key, data):
             self.dbroot[key] = data
 
+
         def update(self, key, data):
             if isinstance(data, Persistent):
                 data._p_changed = True
             else:
                 self.dbroot[key] = data
+
 
         def delete(self, key):
             if key in self.dbroot:
@@ -191,15 +118,16 @@ if ZODB == DBTYPE:
         def abort(self):
             transaction.abort()
 
+
         def contains(self, key):
             return key in self.dbroot
-
 
 
         def close(self):
             self.connection.close()
             self.db.close()
             self.storage.close()
+
 
 elif MONGO == DBTYPE:
     from pymongo import Connection
@@ -231,6 +159,7 @@ elif MONGO == DBTYPE:
                     son[key] = self.transform_outgoing(value, collection)
             return son
 
+
     #connection pooling is already done on
     #MongoDB Connections behind the scenes
     class DB(BaseDB):
@@ -255,10 +184,7 @@ elif MONGO == DBTYPE:
                 self.models.insert(document)
             else:
                 self.update(key, data)
-            
-                
-            
-            
+                    
 
         def update(self, key, data):
             #import pdb; pdb.set_trace()
@@ -274,6 +200,7 @@ elif MONGO == DBTYPE:
         def delete(self, key):
             self.models.remove({'key':key})
 
+
         def commit(self):
             #we don't need this for MongoDB
             pass
@@ -284,8 +211,10 @@ elif MONGO == DBTYPE:
             #but am currently debating whether to use it or not
             pass
 
+
         def contains(self, key):
-            #returns None if no entry with that key filter exists
+            #self.models.find_one returns None
+            #if no entry with that key filter exists
             #so wrapping it in bool will return False if None,
             #True on anything else
             return bool(self.models.find_one({'key':key}))
@@ -325,6 +254,7 @@ elif POSTGRE == DBTYPE:
 
         def abort(self):
             pass
+
 
         def contains(self, key):
             pass
