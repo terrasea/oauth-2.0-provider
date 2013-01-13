@@ -1,0 +1,16 @@
+#from database.client import get_client
+#from database.tokens import get_token
+#from database.user import get_user
+#set $user = get_user($user_id)
+<!DOCTYPE html>
+
+<html lang="en">
+    <head>
+        <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+        <title>Page Title</title>
+    
+    </head>
+    <body>
+        
+    </body>
+</html>

@@ -19,11 +19,13 @@ DBTYPE=MONGO
 
 
 class BaseDB(object):
-    def __init__(self):
-        raise NotImplemented()
+    def __init__(self, collection=None, server=None, port=None):
+        pass
+
 
     def get(self, key):
         pass
+
 
     def put(self, key, value):
         pass
@@ -37,14 +39,9 @@ class BaseDB(object):
         pass
 
 
-    def commit(self):
-        pass
-
-    def abort(self):
-        pass
-
     def contains(self, key):
         pass
+
 
     def close(self):
         pass
@@ -73,70 +70,14 @@ def singletonconnection(cls):
 
 
 
-if ZODB == DBTYPE:
-    from ZEO.ClientStorage import ClientStorage
-    from ZODB import DB as ZDB
-    import transaction
-    from persistent import Persistent
-
-
-    @singletonconnection
-    class DB(BaseDB):
-        def __init__(self, server=SERVER, port=PORT):
-            self.storage = ClientStorage((server, port,))
-            self.db = ZDB(self.storage)
-            self.connection = self.db.open()
-            self.dbroot = self.connection.root()
-
-
-        # KISS policy
-        # let the lookup raise its own exception on a key lookup problem, etc
-        def get(self, key):
-            return self.dbroot[key]
-
-
-        def put(self, key, data):
-            self.dbroot[key] = data
-
-
-        def update(self, key, data):
-            if isinstance(data, Persistent):
-                data._p_changed = True
-            else:
-                self.dbroot[key] = data
-
-
-        def delete(self, key):
-            if key in self.dbroot:
-                del self.dbroot[key]
-            
-
-        def commit(self):
-            transaction.commit()
-
-
-        def abort(self):
-            transaction.abort()
-
-
-        def contains(self, key):
-            return key in self.dbroot
-
-
-        def close(self):
-            self.connection.close()
-            self.db.close()
-            self.storage.close()
-
-
-elif MONGO == DBTYPE:
+if MONGO == DBTYPE:
     from pymongo import Connection
     from pymongo.son_manipulator import SONManipulator
     import jsonpickle
     import json
-    import inspect
 
-    
+
+
     class Transform(SONManipulator):
         """
         Used to transparently transform class objects to dicts and back again.  This is done using jsonpickle and json modules. jsonpickle to create a json string of an object, json to turn this into a python dict or list and store in MongoDB.  On getting from DB, use json to turn dict/list to a string json value and use jsonpickle to turn this json string into the object it represents
@@ -150,6 +91,7 @@ elif MONGO == DBTYPE:
                     son[key] = self.transform_incoming(value, collection)
             return son
 
+
         def transform_outgoing(self, son, collection):
             for (key, value) in son.items():
                 if 'class' == key:
@@ -160,15 +102,26 @@ elif MONGO == DBTYPE:
             return son
 
 
+
     #connection pooling is already done on
     #MongoDB Connections behind the scenes
     class DB(BaseDB):
-        def __init__(self):
-            self.connection = Connection()
+        def __init__(self, collection=None, server=None, port=None, connection=None):
+            super(DB).__init__(collection, server, port)
+            if connection is None:
+                self.connection = Connection()
+            else:
+                self.connection = connection
+            
             self.db = self.connection['oauth']
             #make sure the Tranform class which is a SONManipulator is used
             self.db.add_son_manipulator(Transform())
-            self.models = self.db.models
+            
+            if collection is not None:
+                self.models = self.db.models.collection
+            else:
+                self.models = self.db.models
+                
 
 
         def get(self, key):
@@ -201,17 +154,6 @@ elif MONGO == DBTYPE:
             self.models.remove({'key':key})
 
 
-        def commit(self):
-            #we don't need this for MongoDB
-            pass
-
-
-        def abort(self):
-            #we could do this I think,
-            #but am currently debating whether to use it or not
-            pass
-
-
         def contains(self, key):
             #self.models.find_one returns None
             #if no entry with that key filter exists
@@ -222,14 +164,18 @@ elif MONGO == DBTYPE:
 
         def close(self):
             self.connection.close()
-        
+
+
+
 elif POSTGRE == DBTYPE:
     import psycopg2
     
     class DB(BaseDB):
-        def __init__(self):
+        def __init__(self, collection=None, server=None, port=None):
+            super(DB).__init__(collection, server, port)
             self.connection = psycopg2.connect("dbname='oauth' user='terrasea' host='localhost' password=''")
             self.cursor = connection.cursor()
+            self.table = collection
             pass
 
         def get(self, key):

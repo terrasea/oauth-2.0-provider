@@ -32,6 +32,32 @@ class Association(Persistent):
         return self._user
 
 
+
+class ClientList(Persistent):
+    """
+    Represents the list of clients stored in the database
+    """
+    def __init__(self, clients=None):
+        if clients == None:
+            self._clients = list()
+        else:
+            self._clients = clients
+    
+    
+    @property
+    def clients(self):
+        """
+        The list of clients
+        """
+        return self._clients
+    
+    
+    @clients.setter
+    def clients(self, clients):
+        self._clients = clients
+    
+    
+
 class Client(Persistent):
     """
     Represents a authorised client (program/application)
@@ -119,6 +145,7 @@ class Code(Persistent):
         self._expire = expire
         self._created = time()
 
+
     @property
     def client(self):
         """
@@ -189,6 +216,7 @@ class User(Persistent):
         self._firstname = firstname
         self._lastname = lastname
 
+
     @property
     def id(self):
         return self._id
@@ -207,7 +235,7 @@ class User(Persistent):
     @password.setter
     def password(self, password):
         self._password = password
-        
+
 
     @property
     def firstname(self):

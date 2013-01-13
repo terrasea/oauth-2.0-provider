@@ -14,3 +14,12 @@ class AssociationExistsWarning(exceptions.Warning):
 
 class ConfidentailError(exceptions.Exception):
     pass
+
+
+class AuthenticationError(exceptions.Exception):
+    pass
+    
+
+class ExpireError(exceptions.Exception):
+    pass
+    

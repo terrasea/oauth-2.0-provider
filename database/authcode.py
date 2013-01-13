@@ -1,74 +1,56 @@
-from DB import DB
-from user import get_user
-from client import get_client
+from user import UserDB
+from client import ClientDB
+from tokens import TokenDB
 from models import AuthCode
 
 
-import transaction
+
 import logging
-from copy import deepcopy
 from time import time
 
-def create_auth_code(client_id, uid, scope=None):
-    client = get_client(client_id)
-    user = get_user(uid)
-    db = DB()
-    try:
-        auth_code = AuthCode(client.id, user.id, scope=scope)
-        while db.contains(auth_code.code):
-            token = AccessToken(client.id,
-                                user.id,
-                                scope=scope)
-        db.put(auth_code.code, auth_code)
-        db.commit()
-        code = auth_code.code
+class AuthCodeDB(TokenDB):
+    def __init__(self, server=None, port=None, connection=None):
+        super(AuthCodeDB, self).__init__('AuthCode', server, port, connection)
+        self._client_db = ClientDB(connection=self.connection)
+        self._user_db = UserDB(connection=self.connection)
+
+
+    def create(self, client_id, uid, scope=None):
+        client = self._client_db.get(client_id)
+        user = self._user_db.get(uid)
+
+        try:
+            auth_code = AuthCode(client.id, user.id, scope=scope)
+            while self.contains(auth_code.code):
+                token = AuthCode(client.id,
+                                 user.id,
+                                 scope=scope)
+            self.put(auth_code.code, auth_code)
+
+            code = auth_code.code
+            
+            return code
         
-        return code
-    
-    except Exception, e:
-        logging.error(''.join(['create_auth_code: ', str(e)]))
-        db.abort()
-        raise e
-    finally:
-        db.close()
+        except Exception, e:
+            logging.error(''.join(['create_auth_code: ', str(e)]))
+            raise e
 
-    return None
+        return None
 
 
 
-def delete_auth_code(code):
-    db = DB()
-    try:
-        if db.contains(code):
-            db.delete(code)
-            db.commit()
-    except Exception, e:
-        logging.error('delete_auth_code: ' + str(e))
-        db.abort()
+    def get(self, client_id, client_secret, code):
+        try:
+            if self.contains(code):
+                auth_code = self.get(code)
+                client = self._client_db.get(auth_code.client)
+                if auth_code.expire + auth_code.created > time() and \
+                       client.id == client_id and \
+                       client.secret == client_secret:
+                    return auth_code
+        except Exception, e:
+            logging.error(''.join(['get_auth_code: ', str(e)]))
+            raise e
 
         return False
-    finally:
-        db.close()
-
-    return True
-    
-
-
-
-def get_auth_code(client_id, client_secret, code):
-    db = DB()
-    try:
-        if db.contains(code):
-            auth_code = deepcopy(db.get(code))
-            client = get_client(auth_code.client)
-            if auth_code.expire + auth_code.created > time() and \
-                   client.id == client_id and \
-                   client.secret == client_secret:
-                return auth_code
-    except Exception, e:
-        logging.error(''.join(['get_auth_code: ', str(e)]))
-    finally:
-        db.close()
-
-
-    return False
+        

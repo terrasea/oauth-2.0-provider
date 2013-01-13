@@ -1,0 +1,117 @@
+#from base import base
+#extend base
+
+#block header
+<script>
+    $(document).ready(function() {
+        $('input[name="delete"]').click(function() {
+            var id = $(this).val();
+            $.ajax({
+                type: 'DELETE',  //deletes
+                url: $delete_url+'/' + id, //this is REST after all
+            }).done(function(data) {
+                //remove table row for this client
+                $('#' + id).remove();
+            }).fail(function(jqXHR, textStatus) {
+                alert('Something went wrong: ' + textStatus);
+            });
+        });
+        
+        
+        $('input[name="add"]').click(function() {
+            $.ajax({
+                type: 'POST',  //creates
+                url: $add_url,
+            }).done(function(data) {
+                var id = data.id;
+                var name = data.name;
+                var secret = data.secret;
+                var redirect_uri = data.redirect_uri;
+                var type = data.type;
+                $('<tr id="' + id + '"><td>' + id + '</td><td><span id="name_' +
+                id + '" class="name_edit">' + name +'</span></td><td>' + 
+                secret + '</td><td>' + redirect_uri + '</td><td>' + type + 
+                '</td><td><input type="button" name="delete" value="' + id + 
+                '" id="delete_' + id + 
+                '" ></td></tr>').insertBefore('#add_row');
+            }).fail(function(jqXHR, textStatus) {
+                alert('Something went wrong: ' + textStatus);
+            });
+        });
+        
+        
+        var edit_name = function() {
+            var id = $(this).closest('tr').attr('id');
+            var value = $(this).text();
+            var klass = $(this).attr('class');
+            var span = $(this);
+            var input = $('<input name="name" value="' + value +'" id="' + id + '" class="' + klass + '" >');
+            $(this).replaceWith(input);
+            input.keypress(function(e) {
+                if(e.which == 13) {
+                    if($.trim(span.text()) != $.trim($(this).val())) {
+                        $.ajax({
+                            type: 'PUT',  //updates
+                            url: $update_url + '/' + id,
+                            data: {name: $.trim($(this).val())}
+                        }).done(function(data) {
+                            span.text(data.name);
+                            $(this).replaceWith(span);
+                            span.click(edit_name);
+                        }).fail(function(jqXHR, textStatus) {
+                            alert('Something went wrong: ' + textStatus);
+                            $(this).replaceWith(span);
+                            span.click(edit_name);
+                        });
+                    } else {
+                        $(this).replaceWith(span);
+                        span.click(edit_name);
+                    }
+                }
+            });
+        };
+        
+        
+        $('.name_edit').click(edit_name);
+    });
+</script>
+#end block header
+
+#block body
+<form action="$action" method="get">
+    <table id="client_list">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Client ID</th>
+                <th>Client Secret</th>
+                <th>Redirect URI</th>
+                <th>Type</th>
+                <th>Delete?</th>
+            </tr>
+        </thead>
+        <tbody>
+            #for $client in $client_list
+            <tr id="$client.id">
+                <td>
+                    <span id="name_$client.id" class="name_edit">$client.name</span>
+                </td>
+                <td id="id_$client.id">$client.id</td>
+                <td id="secret_$client.id">$client.secret</td>
+                <td id="redirect_uri_$client.id">$client.redirect_uri</td>
+                <td id="type_$client.id">$client.type</td>
+                <td>
+                    <input type="button" name="delete" value="$client.id" id="delete_$client.id" />
+                </td>
+            </tr>
+            #end for
+            <tr id="add_row">
+                <td colspan="5">&nbsp;</td>
+                <td>
+                    <input type="button" name="add" value="0" id="add_button" />
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</form>
+#end block body

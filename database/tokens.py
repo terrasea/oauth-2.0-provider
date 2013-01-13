@@ -7,61 +7,46 @@ import logging
 import transaction
 
 
-def get_token(client_id, client_secret, code):
-    '''
-    This function should get any type of token
-    since the code is unique and should only
-    return the type of token that was created
-    in create_[...]_token
-    '''
-    db = DB()
-    try:
-        if db.contains(code):
-            token = db.get(code)
-            client = get_client(token.client)
-            if (not token.expire or token.expire + \
-                token.created > time()) and \
-                client.id == client_id and \
-                client.secret == client_secret:
-            
-                return token
+class TokenDB(DB):
+    def __init__(self, collection=None, server=None, port=None, connection=None):
+        super(TokenDB, self).__init__(collection, server, port, connection)
+
+
+    def get(client_id, client_secret, code):
+        '''
+        This function should get any type of token
+        since the code is unique and should only
+        return the type of token that was created
+        in create_[...]_token
+        '''
+        try:
+            if self.contains(code):
+                token = self.get(code)
+                client = get_client(token.client)
+                if (not token.expire or token.expire + \
+                    token.created > time()) and \
+                    client.id == client_id and \
+                    client.secret == client_secret:
+                
+                    return token
+                else:
+                    logging.warn('get_token: Did not authenticate')
             else:
-                logging.warn('get_token: Did not authenticate')
-        else:
-            logging.warn(''.join(['get_token: code ', str(code), ' is not in database']))
-    except Exception, e:
-        logging.error(''.join(['get_token(',
-                               str(client_id),
-                               ',',
-                               str(client_secret),
-                               ',',
-                               str(code),
-                               '): ',
-                               str(e)]))
-    finally:
-        db.close()
+                logging.warn(''.join(['get_token: code ', str(code), ' is not in database']))
+        except Exception, e:
+            logging.error(''.join(['get_token(',
+                                   str(client_id),
+                                   ',',
+                                   str(client_secret),
+                                   ',',
+                                   str(code),
+                                   '): ',
+                                   str(e)]))
+                                   
+            raise e;
+            
 
-    return False
-
+        return False
 
 
-def delete_token(token):
-    db = DB()
-    try:
-        if isinstance(token, Code):
-            db.delete(token.code)
-        elif isinstance(token, str):
-            db.delete(token)
-        else:
-            logging.warn('delete_token: token ' + str(token) + \
-                            ' is neither an' + \
-                            ' AuthCode type nor is it a string')
-            return
-        
-        db.commit()
-    except Exception, e:
-        logging.error('delete_token: ' + str(e))
-        db.abort()
-    finally:
-        db.close()
 

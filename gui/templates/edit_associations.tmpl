@@ -4,7 +4,7 @@
 #set $user = get_user($user_id)
 <!DOCTYPE html>
 
-<html>
+<html lang="en">
   <head>
     <title>$user.firstname $user.lastname Associations</title>
     <script src="$jquery"></script>
@@ -33,7 +33,7 @@
             <td>
               <form id="remove_form" method="post" action="$action">
                 <input type="hidden" name="client_id" value="$client_id" />
-                <input type="user_id" name="user_id" value="$user_id" />
+                <input type="hidden" name="user_id" value="$user_id" />
                 <input type="submit" name="submit" value="Remove" />
               </form>
             </td>

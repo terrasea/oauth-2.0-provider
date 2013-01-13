@@ -8,89 +8,38 @@ logging = logmodule.getLogger('oauth user')
 
 from copy import deepcopy
 
-def get_password(uid):
-    db = DB()
-    try:
-        if db.contains(uid):
-            user = db.get(uid)
-            logging.warn(str(user))
-            return user.password
-        else:
-            logging.warn('get_password: user of uid ' + str(uid) + \
-                         ' does not exist')
-    #except Exception, e:
-    #    logging.error('get_password(): ' + str(e))
-    #    raise e
-    finally:
-        db.close()
-
-    return None
 
 
-def get_user(uid):
-    db = DB()
-    try:
-        if db.contains(uid):
-            user = db.get(uid)
+class UserDB(DB):
+    def __init__(self, server=None, port=None, connection=None):
+        super(UserDB, self).__init__('User', server, port, connection)
 
-            return deepcopy(user)
-        else:
-            logging.warn('get_user: user of uid ' + str(uid) + \
-                         ' does not exist')
-    except Exception, e:
-        logging.error('get_user: ' + str(e))
-    finally:
-        db.close()
-
-    return None
-
-
-def add_user(uid, password, firstname=None, lastname=None):
-    if not uid or not password:
-        logging.error("add_user: can't add a user of uid " + str(uid) + \
-                      " and password of " + str(password))
-        return None
-    user = User(uid, password, firstname, lastname)
-    db = DB()
-    try:
-        #if it doesn't exist add it else report it does
-        if not db.contains(uid):
-            db.put(uid, user)
-            db.commit()
-        else:
-            logging.warn(''.join(['add_user: ', str(uid), ' already exists']))
-            raise UserExistsWarning(''.join(['User ', str(uid), ' already exists']))
-    except Exception, e:
-        logging.error(''.join(['add_user: ', (str(e))]))
-        db.abort()
-        
-        return None
-    finally:
-        db.close()
-
-        
-    return user
+    def add(self,
+            uid,
+            password,
+            firstname=None,
+            lastname=None):
+        if not uid or not password:
+            logging.error("add_user: can't add a user of uid " + str(uid) + \
+                          " and password of " + str(password))
+            return None
+        user = User(uid, password, firstname, lastname)
+        try:
+            #if it doesn't exist add it else report it does
+            if not self.contains(uid):
+                self.put(uid, user)
+            else:
+                logging.warn(''.join(['add_user: ', str(uid), ' already exists']))
+                raise UserExistsWarning(''.join(['User ', str(uid), ' already exists']))
+        except Exception, e:
+            logging.error(''.join(['add_user: ', (str(e))]))
+            
+            raise e
+            
+        return user
 
 
 
-def delete_user(uid):
-    db = DB()
-    try:
-        if db.contains(uid):
-            db.delete(uid)
-            db.commit()
-            return True
-        else:
-            logging.warn('delete_user: user of uid ' + str(uid) + \
-                         ' does not exist')
-    except Exception, e:
-        logging.error('Error deleting user with uid ' + str(uid) + \
-                      ': ' + str(e))
-        db.abort()
-    finally:
-        db.close()
-
-    return False
 
 if __name__ == '__main__':
     #delete_user('jim')
