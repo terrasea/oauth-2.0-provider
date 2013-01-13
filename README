@@ -1,0 +1,15 @@
+OAuth 2.0 Provider
+
+An attmpt to implement the OAuth 2.0 token provider part of the OAuth 2.0 
+protocol written in Python.  It uses Cherrypy as the web framework, Cheetah to
+provide an html templating language, and your choice of ZODB 3.0, mongodb or a
+planned Postgre database backend.
+
+This currently does not implement all the flows, but plans are in place to do 
+so.
+
+There is also plans to implement a fully functional web interface to manage 
+clients, and client user associations.
+
+This only implements draft OAuth 2.0 version 22
+
