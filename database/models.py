@@ -3,7 +3,14 @@ Contains all the DB models needed to store information
 for the OAuth 2.0 provider
 """
 
-from persistent import Persistent
+from config import *
+
+if ZODB == DBTYPE:
+    from persistent import Persistent
+else:
+    class Persistent(object):
+        pass
+        
 from time import time
 from uuid import uuid4
 

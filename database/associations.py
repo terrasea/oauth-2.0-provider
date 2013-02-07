@@ -6,7 +6,7 @@ from client import get_client
 from user import get_user
 
 import logging
-import transaction
+#import transaction
 from copy import deepcopy
 
 

@@ -6,7 +6,7 @@ from tokens import delete_token, get_token
 
 from time import time
 from copy import deepcopy
-import transaction
+#import transaction
 import logging
 
 def create_access_token_from_code(auth_code):

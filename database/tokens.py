@@ -4,7 +4,7 @@ from client import get_client
 
 from copy import deepcopy
 import logging
-import transaction
+#import transaction
 
 
 def get_token(client_id, client_secret, code):

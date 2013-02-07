@@ -3,7 +3,7 @@ from models import RefreshToken
 from client import get_client
 from tokens import delete_token
 
-import transaction
+#import transaction
 from copy import deepcopy
 import logging
 

@@ -4,7 +4,7 @@ from client import get_client
 from models import AuthCode
 
 
-import transaction
+#import transaction
 import logging
 from copy import deepcopy
 from time import time

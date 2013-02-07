@@ -1,5 +1,5 @@
 from DB import DB
-import transaction
+#import transaction
 import logging
 
 def add_anonymous_url(url):

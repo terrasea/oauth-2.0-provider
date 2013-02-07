@@ -1,6 +1,6 @@
 from DB import DB
 from models import User
-import transaction
+#import transaction
 import logging as logmodule
 from errors import *
 

@@ -87,7 +87,7 @@ class Provider(object):
 
 
         if scope != None:
-            available = self.available_scope()
+            available = self.available_scope
             scope_list = scope.split()
             available_scope = [x for x in scope_list if x in available]
             if available_scope != scope_list:
@@ -343,6 +343,9 @@ class Provider(object):
         auth_code = database.authcode.get_auth_code(client_id,
                                                     client_secret,
                                                     code)
+        print client, auth_code, 
+        if client:
+            print redirect_uri, client.redirect_uri
 
         if auth_code and \
                client and \
@@ -635,7 +638,7 @@ if __name__ == '__main__':
 
     class Root(object):
         @expose
-        def index(self, error=None, code=None):
+        def index(self, error=None, code=None, state=None):
             if error != None:
                 return "<html><head><title>Index</title></head><body><div>This is the index where a error %s occured</div></body></html>" % (error)
             elif code != None:
@@ -643,13 +646,13 @@ if __name__ == '__main__':
                         'client_id': 'o9999o',
                         'client_secret': 'secret',
                         'code': code,
-                        'redirect_uri': 'http://localhost:8080',}
+                        'redirect_uri': 'http://127.0.0.1:8080',}
                 request = Request('http://localhost:8080/oauth/token',
                                   urlencode(data))
                 logging.info(str(request))
                 response = urlopen(request)
                 message = response.read()
-                return "<html><head><title>Index</title></head><body><div>This is the index where the code is %s</div><div>%s</div></body></html>" % (code, message)
+                return "<html><head><title>Index</title></head><body><div>This is the index where the code is %s</div><div>%s</div><with a returned state of %s</div></body></html>" % (code, message, state)
             return "<html><head><title>Index</title></head><body><div>This is the index</div></body></html>"
 
     index = Root()

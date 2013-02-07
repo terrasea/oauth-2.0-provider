@@ -1,7 +1,7 @@
 from DB import DB
 from models import Client
 from errors import ClientExistsWarning
-import transaction
+#import transaction
 import logging
 from copy import deepcopy
 
